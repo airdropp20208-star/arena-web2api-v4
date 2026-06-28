@@ -19,6 +19,7 @@ from src.auth import APIKeyMiddleware
 from src.config import APP_VERSION, HOST, LOG_LEVEL, PORT
 from src.conversation_store import store
 from src.cookie_pool import get_cookie_pool
+from src.debug_logging import DebugLoggingMiddleware
 from src.logger import setup_logger
 from src.model_registry import registry
 from src.request_id import RequestIDMiddleware
@@ -76,6 +77,7 @@ app.add_middleware(
 # RequestID should wrap so even 401 responses get an id.
 app.add_middleware(APIKeyMiddleware)
 app.add_middleware(RequestIDMiddleware)
+app.add_middleware(DebugLoggingMiddleware)
 
 
 @app.exception_handler(RequestValidationError)

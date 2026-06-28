@@ -14,6 +14,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from src.config import API_KEY_ENABLED, API_KEYS
 from src.logger import setup_logger
+from src.per_key_rate_limit import per_key_limiter
 
 logger = setup_logger(__name__)
 
@@ -91,5 +92,19 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
                         "type": "authentication_error",
                     }
                 },
+            )
+        # Per-key rate limiting
+        if not await per_key_limiter.check(key or ""):
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=429,
+                content={
+                    "error": {
+                        "message": "Rate limit exceeded for this API key.",
+                        "type": "rate_limit_error",
+                    }
+                },
+                headers={"Retry-After": "60"},
             )
         return await call_next(request)

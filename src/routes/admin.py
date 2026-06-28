@@ -16,11 +16,15 @@ Admin / health endpoints.
 
 from __future__ import annotations
 
+import os
+import time
+
+import httpx
 from fastapi import APIRouter, Header, HTTPException
 
 from src.circuit_breaker import breaker
 from src.concurrency import gate
-from src.config import ADMIN_TOKEN, APP_VERSION, ARENA_AUTH, CF_CLEARANCE
+from src.config import ADMIN_TOKEN, APP_VERSION, ARENA_AUTH, ARENA_BASE, CF_CLEARANCE, DEFAULT_USER_AGENT
 from src.conversation_store import store
 from src.cookie_pool import get_cookie_pool
 from src.idempotency import idempotency
@@ -28,6 +32,7 @@ from src.logger import setup_logger
 from src.metrics import metrics
 from src.model_registry import registry
 from src.rate_limiter import limiter
+from src.per_key_rate_limit import per_key_limiter
 
 router = APIRouter()
 logger = setup_logger(__name__)
@@ -39,9 +44,69 @@ def _check_admin(x_admin_token: str | None):
         raise HTTPException(401, "Invalid admin token (set X-Admin-Token header).")
 
 
+def _get_memory_usage() -> dict:
+    """Process memory usage (RSS, VMS)."""
+    try:
+        import resource
+        usage = resource.getrusage(resource.RUSAGE_SELF)
+        return {
+            "rss_mb": round(usage.ru_maxrss / 1024, 1),
+            "pid": os.getpid(),
+        }
+    except Exception:
+        return {"pid": os.getpid()}
+
+
+async def _check_arena_latency() -> dict:
+    """Ping Arena /nextjs-api/models — trả về latency ms hoặc error."""
+    try:
+        start = time.time()
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            resp = await client.get(
+                f"{ARENA_BASE}/nextjs-api/models",
+                headers={"accept": "application/json", "user-agent": DEFAULT_USER_AGENT},
+            )
+        latency_ms = round((time.time() - start) * 1000, 1)
+        return {
+            "reachable": resp.status_code < 500,
+            "status_code": resp.status_code,
+            "latency_ms": latency_ms,
+        }
+    except Exception as e:
+        return {"reachable": False, "error": str(e)[:200]}
+
+
 @router.get("/health")
 async def health():
-    return {"status": "ok", "service": "arena-web2api", "version": APP_VERSION}
+    """Liveness + memory + Arena connectivity."""
+    mem = _get_memory_usage()
+    return {
+        "status": "ok",
+        "service": "arena-web2api",
+        "version": APP_VERSION,
+        "memory": mem,
+        "pid": os.getpid(),
+    }
+
+
+@router.get("/health/detailed")
+async def health_detailed():
+    """Detailed health: memory + Arena latency + pool status."""
+    mem = _get_memory_usage()
+    pool = await get_cookie_pool()
+    arena = await _check_arena_latency()
+    return {
+        "status": "ok",
+        "service": "arena-web2api",
+        "version": APP_VERSION,
+        "memory": mem,
+        "arena": arena,
+        "cookie_pool": {
+            "size": pool.size,
+            "healthy": pool.healthy_count(),
+        },
+        "breaker": breaker.snapshot(),
+    }
 
 
 @router.get("/ready")
@@ -156,7 +221,7 @@ async def admin_breaker_reset(x_admin_token: str | None = Header(default=None)):
 @router.get("/admin/ratelimit")
 async def admin_ratelimit(x_admin_token: str | None = Header(default=None)):
     _check_admin(x_admin_token)
-    return limiter.snapshot()
+    return {"global": limiter.snapshot(), "per_key": per_key_limiter.snapshot()}
 
 
 @router.get("/admin/conversations")

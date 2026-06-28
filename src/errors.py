@@ -23,7 +23,7 @@ class ArenaWeb2APIError(Exception):
 class NoCookiesError(ArenaWeb2APIError):
     status = 503
 
-    def __init__(self, message: str = "Không có cookie nào khả dụng trong pool."):
+    def __init__(self, message: str = "Không có cookie nào khả dụng trong pool. / No cookies available in pool."):
         super().__init__(message)
 
 
@@ -37,8 +37,9 @@ class ModelNotResolvedError(ArenaWeb2APIError):
 
     def __init__(self, model: str):
         super().__init__(
-            f"Không phân giải được UUID cho model '{model}'. "
-            "Gọi GET /v1/models để xem danh sách, hoặc bật MODEL_REGISTRY_ON_STARTUP."
+            f"Không phân giải được UUID cho model '{model}'. / Could not resolve UUID for model '{model}'. "
+            "Gọi GET /v1/models để xem danh sách, hoặc bật MODEL_REGISTRY_ON_STARTUP. / "
+            "Call GET /v1/models to see available models, or enable MODEL_REGISTRY_ON_STARTUP."
         )
         self.model = model
 
@@ -53,7 +54,8 @@ class CircuitOpenError(ArenaWeb2APIError):
 
     def __init__(self, cooldown: float):
         super().__init__(
-            f"Circuit breaker đang OPEN (upstream đang lỗi). Thử lại sau ~{cooldown:.0f}s."
+            f"Circuit breaker đang OPEN (upstream đang lỗi). Thử lại sau ~{cooldown:.0f}s. / "
+            f"Circuit breaker is OPEN (upstream error). Retry after ~{cooldown:.0f}s."
         )
 
 
