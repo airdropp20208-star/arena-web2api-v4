@@ -100,6 +100,12 @@ class ChatRequest(BaseModel):
     tools: list[dict] | None = None
     tool_choice: Any | None = None
 
+    def model_post_init(self, __context: Any) -> None:
+        if len(self.messages) > 500:
+            raise ValueError("Too many messages (max 500).")
+        if len(self.messages) == 0:
+            raise ValueError("messages must not be empty.")
+
 
 class BattleRequest(BaseModel):
     messages: list[Message]

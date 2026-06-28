@@ -63,7 +63,7 @@ def _client(proxy: str | None) -> httpx.AsyncClient:
     )
 
 
-def _attachments_payload(attachments: list) -> list:
+def _attachments_payload(attachments: list) -> list[dict]:
     """Chuyển Attachment objects/dicts → experimental_attachments shape."""
     out = []
     for a in attachments or []:

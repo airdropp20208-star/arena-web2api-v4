@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import StreamingResponse
 
 from src.client import client
+from src.concurrency import gate
 from src.conversation import manager
 from src.errors import ArenaWeb2APIError
 from src.logger import setup_logger
@@ -64,25 +65,26 @@ async def battle(req: BattleRequest):
             a = b = ""
             model_a = model_b = None
             try:
-                async for ev in client.stream_battle(plan):
-                    if ev.kind == "error" and ev.error:
-                        yield f"data: {json.dumps({'error': ev.error})}\n\n"
-                        return
-                    if ev.kind == "done":
-                        continue
-                    if ev.kind == "reveal":
-                        model_a = ev.model_a or model_a
-                        model_b = ev.model_b or model_b
-                        yield f"data: {json.dumps({'reveal': True, 'model_a': model_a, 'model_b': model_b})}\n\n"
-                        continue
-                    if not ev.content:
-                        continue
-                    which = ev.model_index or "a"
-                    if which == "a":
-                        a += ev.content
-                    else:
-                        b += ev.content
-                    yield f"data: {json.dumps({'model': which, 'content': ev.content})}\n\n"
+                async with gate.slot():
+                    async for ev in client.stream_battle(plan):
+                        if ev.kind == "error" and ev.error:
+                            yield f"data: {json.dumps({'error': ev.error})}\n\n"
+                            return
+                        if ev.kind == "done":
+                            continue
+                        if ev.kind == "reveal":
+                            model_a = ev.model_a or model_a
+                            model_b = ev.model_b or model_b
+                            yield f"data: {json.dumps({'reveal': True, 'model_a': model_a, 'model_b': model_b})}\n\n"
+                            continue
+                        if not ev.content:
+                            continue
+                        which = ev.model_index or "a"
+                        if which == "a":
+                            a += ev.content
+                        else:
+                            b += ev.content
+                        yield f"data: {json.dumps({'model': which, 'content': ev.content})}\n\n"
                 manager.commit_response(plan, a or b)
                 yield f"data: {json.dumps({'done': True, 'conversation_id': plan.conversation.conversation_id, 'model_a': model_a, 'model_b': model_b})}\n\n"
                 yield "data: [DONE]\n\n"
@@ -106,7 +108,8 @@ async def battle(req: BattleRequest):
 
     # non-stream
     try:
-        a, b, model_a, model_b = await _run_battle(plan)
+        async with gate.slot():
+            a, b, model_a, model_b = await _run_battle(plan)
     except ArenaWeb2APIError as e:
         await metrics.record(
             model="arena-battle",

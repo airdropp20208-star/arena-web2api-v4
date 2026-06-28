@@ -11,7 +11,9 @@ from contextlib import asynccontextmanager
 
 import uvicorn
 from fastapi import FastAPI
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from src.auth import APIKeyMiddleware
 from src.config import APP_VERSION, HOST, LOG_LEVEL, PORT
@@ -75,11 +77,30 @@ app.add_middleware(
 app.add_middleware(APIKeyMiddleware)
 app.add_middleware(RequestIDMiddleware)
 
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request, exc: RequestValidationError):
+    """OpenAI-compatible validation error shape."""
+    errors = exc.errors()
+    msg = "; ".join(
+        f"{'.'.join(str(p) for p in e.get('loc', []))}: {e.get('msg', '')}" for e in errors[:5]
+    )
+    return JSONResponse(
+        status_code=422,
+        content={
+            "error": {
+                "message": f"Invalid request: {msg}",
+                "type": "invalid_request_error",
+                "code": "invalid_request",
+            }
+        },
+    )
+
 # Routes
-app.include_router(admin_router)  # /health, /cookie-status, /admin/*
-app.include_router(chat_router, prefix="/v1")  # /v1/chat/completions
-app.include_router(battle_router, prefix="/v1")  # /v1/battle, /v1/battle/vote
-app.include_router(models_router, prefix="/v1")  # /v1/models
+app.include_router(admin_router, tags=["Admin"])  # /health, /cookie-status, /admin/*
+app.include_router(chat_router, prefix="/v1", tags=["Chat"])  # /v1/chat/completions
+app.include_router(battle_router, prefix="/v1", tags=["Battle"])  # /v1/battle, /v1/battle/vote
+app.include_router(models_router, prefix="/v1", tags=["Models"])  # /v1/models
 
 
 if __name__ == "__main__":

@@ -145,8 +145,11 @@ async def admin_breaker(x_admin_token: str | None = Header(default=None)):
 @router.post("/admin/breaker/reset")
 async def admin_breaker_reset(x_admin_token: str | None = Header(default=None)):
     _check_admin(x_admin_token)
-    breaker.state = "closed"
+    from src.circuit_breaker import State
+
+    breaker.state = State.CLOSED
     breaker._failures = 0
+    breaker._half_open_probes = 0
     return breaker.snapshot()
 
 

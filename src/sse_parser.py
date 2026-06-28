@@ -141,18 +141,9 @@ def _norm_index(val) -> str | None:
     if val is None:
         return None
     s = str(val).strip().lower()
-    if s in ("a", "0", "modela", "model_a", "left", "1"):
-        # 0 thường = model A (index đầu)
-        if s in ("a", "modela", "model_a", "left"):
-            return "a"
-        if s == "0":
-            return "a"
-        if s == "1":
-            return "b"
+    if s in ("a", "0", "modela", "model_a", "left"):
         return "a"
     if s in ("b", "1", "modelb", "model_b", "right"):
-        if s == "1":
-            return "b"
         return "b"
     return None
 

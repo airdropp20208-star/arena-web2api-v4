@@ -64,6 +64,11 @@ RETRY_ATTEMPTS = _get_int("RETRY_ATTEMPTS", "3")
 RETRY_BASE_DELAY = _get_float("RETRY_BASE_DELAY", "1.5")  # backoff cơ sở (giây)
 RETRY_MAX_DELAY = _get_float("RETRY_MAX_DELAY", "30.0")  # backoff trần (giây)
 RETRY_JITTER = _get_float("RETRY_JITTER", "0.3")  # tỉ lệ jitter (0-1)
+# Validate: base delay phải > 0 để tránh division by zero
+if RETRY_BASE_DELAY <= 0:
+    RETRY_BASE_DELAY = 1.5
+if RETRY_MAX_DELAY < RETRY_BASE_DELAY:
+    RETRY_MAX_DELAY = RETRY_BASE_DELAY
 REQUEST_TIMEOUT = _get_int("REQUEST_TIMEOUT", "120")
 CONNECT_TIMEOUT = _get_float("CONNECT_TIMEOUT", "15.0")
 # tự thử lại cho các status này (429/5xx); 4xx khác throw ngay

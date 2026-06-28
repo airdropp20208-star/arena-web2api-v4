@@ -78,11 +78,14 @@ class CookiePool:
 
     def _build(self) -> None:
         parsed = _parse_pool(COOKIE_POOL_RAW)
+        seen_auths: set[str] = set()
         if parsed:
             for i, (a, c) in enumerate(parsed):
-                self._entries.append(CookieEntry(a, c, label=f"pool-{i}"))
-        # luôn có entry từ single-cookie config
-        if ARENA_AUTH:
+                if a not in seen_auths:
+                    seen_auths.add(a)
+                    self._entries.append(CookieEntry(a, c, label=f"pool-{i}"))
+        # luôn có entry từ single-cookie config (trừ khi đã có trong pool)
+        if ARENA_AUTH and ARENA_AUTH not in seen_auths:
             self._entries.append(CookieEntry(ARENA_AUTH, CF_CLEARANCE, label="default"))
         if not self._entries:
             logger.warning("⚠️  Cookie pool trống — set ARENA_AUTH_COOKIE trong .env")

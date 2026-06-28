@@ -45,8 +45,10 @@ class ConcurrencyGate:
                     f"Server quá tải ({self._active} active, {self._waiting} queued). Thử lại sau.",
                 )
             self._waiting += 1
+        acquired = False
         try:
             await asyncio.wait_for(self._sem.acquire(), timeout=queue_timeout)
+            acquired = True
         except asyncio.TimeoutError:
             raise ArenaWeb2APIError(
                 503, f"Queue timeout sau {queue_timeout}s (server quá tải)."
@@ -54,13 +56,15 @@ class ConcurrencyGate:
         finally:
             async with self._lock:
                 self._waiting = max(0, self._waiting - 1)
-                self._active += 1
+                if acquired:
+                    self._active += 1
         try:
             yield
         finally:
-            async with self._lock:
-                self._active = max(0, self._active - 1)
-            self._sem.release()
+            if acquired:
+                async with self._lock:
+                    self._active = max(0, self._active - 1)
+                self._sem.release()
 
     def snapshot(self) -> dict:
         return {

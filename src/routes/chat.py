@@ -29,11 +29,13 @@ from src.idempotency import idempotency
 from src.logger import setup_logger
 from src.metrics import metrics
 from src.models import (
+    Attachment,
     ChatRequest,
     ChatResponse,
     Choice,
     ChoiceMessage,
     FunctionCall,
+    Message,
     ToolCall,
     Usage,
 )
@@ -53,7 +55,7 @@ router = APIRouter()
 logger = setup_logger(__name__)
 
 
-def _collect_attachments(messages) -> list:
+def _collect_attachments(messages: list[Message]) -> list[Attachment]:
     """Lấy image_url parts của mọi user message (đặc biệt message cuối)."""
     items = []
     for m in messages:

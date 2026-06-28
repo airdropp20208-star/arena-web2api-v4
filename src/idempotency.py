@@ -65,11 +65,15 @@ class IdempotencyStore:
             self._store[key] = _Entry(value, IDEMPOTENCY_TTL)
             # giải phóng inflight marker
             inflight = self._inflight.pop(key, None)
-            if len(self._store) > 1000:
-                now = time.time()
-                self._store = {k: v for k, v in self._store.items() if v.expires_at > now}
+            self._cleanup_expired_locked()
         if inflight:
             inflight.event.set()
+
+    def _cleanup_expired_locked(self) -> None:
+        """Xoá entries đã hết hạn (gọi khi đã giữ lock)."""
+        if len(self._store) > 100:
+            now = time.time()
+            self._store = {k: v for k, v in self._store.items() if v.expires_at > now}
 
     async def acquire(self, key: str) -> Any | _Inflight | None:
         """
