@@ -47,7 +47,8 @@ from src.logger import setup_logger
 from src.model_registry import registry
 from src.rate_limiter import limiter
 from src.session import acquire_cookie, build_browser_headers, next_proxy
-from src.sse_parser import ArenaEvent, iter_arena_events
+from src.sse_parser import ArenaEvent, SSEDecoder, iter_arena_events, parse_arena_event
+from src.recaptcha import get_recaptcha_token
 from src.utils import backoff_delay, new_uuid
 
 logger = setup_logger(__name__)
@@ -83,9 +84,9 @@ def _attachments_payload(attachments: list) -> list[dict]:
     return out
 
 
-def build_direct_payload(plan: TurnPlan) -> dict:
+def build_direct_payload(plan: TurnPlan, recaptcha_token: str | None = None) -> dict:
     conv = plan.conversation
-    return {
+    payload = {
         "id": new_uuid(),
         "conversationId": conv.conversation_id,
         "mode": "direct",
@@ -99,11 +100,14 @@ def build_direct_payload(plan: TurnPlan) -> dict:
         },
         "modality": "chat",
     }
+    if recaptcha_token:
+        payload["recaptchaV3Token"] = recaptcha_token
+    return payload
 
 
-def build_battle_payload(plan: TurnPlan) -> dict:
+def build_battle_payload(plan: TurnPlan, recaptcha_token: str | None = None) -> dict:
     conv = plan.conversation
-    return {
+    payload = {
         "id": new_uuid(),
         "conversationId": conv.conversation_id,
         "mode": "battle",
@@ -117,6 +121,9 @@ def build_battle_payload(plan: TurnPlan) -> dict:
         },
         "modality": "chat",
     }
+    if recaptcha_token:
+        payload["recaptchaV3Token"] = recaptcha_token
+    return payload
 
 
 def _retry_after(resp: httpx.Response) -> float | None:
@@ -147,38 +154,19 @@ class ArenaClient:
 
     async def _stream_attempt(self, payload: dict) -> AsyncIterator[ArenaEvent]:
         """
-        Một lần thử stream: mở connection, check status, rồi yield events.
-        Retry được thực hiện bởi lớp ngoài (stream_direct/stream_battle).
-
-        Raise ArenaServerError nếu stream trả về rỗng (dấu hiệu lỗi upstream).
+        Một lần thử stream qua browser proxy (reCAPTCHA chỉ hoạt động trong browser).
         """
-        entry = await acquire_cookie()
-        proxy = next_proxy()
-        headers = build_browser_headers()
-        cookies = entry.as_cookies()
+        from src.browser_proxy import stream_via_browser
 
-        try:
-            async with _client(proxy) as http:
-                async with http.stream(
-                    "POST",
-                    ARENA_STREAM_URL,
-                    headers=headers,
-                    cookies=cookies,
-                    json=payload,
-                ) as resp:
-                    _raise_for_status(resp)
-                    started = False
-                    async for ev in iter_arena_events(resp.aiter_text()):
-                        started = True
-                        yield ev
-                    if not started:
-                        # stream rỗng — upstream lỗi, cần retry + breaker track
-                        raise ArenaServerError(502, "Arena stream trả về rỗng (0 events).")
-        except (ArenaError, httpx.HTTPError):
-            await self._mark_cookie(entry, ok=False)
-            raise
-        else:
-            await self._mark_cookie(entry, ok=True)
+        started = False
+        async for text_chunk in stream_via_browser(payload):
+            for sse in SSEDecoder().feed(text_chunk):
+                ev = parse_arena_event(sse)
+                if ev:
+                    started = True
+                    yield ev
+        if not started:
+            raise ArenaServerError(502, "Arena stream trả về rỗng (0 events).")
 
     @staticmethod
     async def _mark_cookie(entry, *, ok: bool) -> None:
@@ -312,11 +300,13 @@ class ArenaClient:
             await breaker.success()
 
     async def stream_direct(self, plan: TurnPlan) -> AsyncIterator[ArenaEvent]:
-        async for ev in self._stream_grounded(build_direct_payload(plan), label="direct"):
+        recaptcha_token = await get_recaptcha_token()
+        async for ev in self._stream_grounded(build_direct_payload(plan, recaptcha_token), label="direct"):
             yield ev
 
     async def stream_battle(self, plan: TurnPlan) -> AsyncIterator[ArenaEvent]:
-        async for ev in self._stream_grounded(build_battle_payload(plan), label="battle"):
+        recaptcha_token = await get_recaptcha_token()
+        async for ev in self._stream_grounded(build_battle_payload(plan, recaptcha_token), label="battle"):
             yield ev
 
     async def submit_vote(self, conversation_id: str, vote: str) -> dict:

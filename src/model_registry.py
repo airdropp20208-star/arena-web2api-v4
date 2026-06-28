@@ -77,29 +77,43 @@ class ModelRegistry:
         return count
 
     async def refresh(self) -> int:
-        """Fetch /nextjs-api/models và cập nhật map. Trả về số model."""
-        import httpx
-
-        from src.session import acquire_cookie
+        """Fetch models từ Arena browser. Trả về số model."""
+        import json as json_mod
 
         async with self._lock:
             try:
-                entry = await acquire_cookie()
-                headers = build_browser_headers({"accept": "application/json"})
-                async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
-                    resp = await client.get(
-                        ARENA_MODELS_URL,
-                        headers=headers,
-                        cookies=entry.as_cookies(),
-                    )
-                if resp.status_code >= 400:
-                    logger.warning(
-                        f"Model registry fetch HTTP {resp.status_code} — giữ cache cũ / fallback."
-                    )
-                    return len(self._name_to_id)
-                count = self._ingest(resp.json())
-                logger.info(f"Model registry: nạp {count} model từ Arena.")
-                return count
+                # Dùng agent-browser để lấy models (browser có cookies đúng)
+                proc = await asyncio.create_subprocess_exec(
+                    "agent-browser", "eval",
+                    """
+                    (async () => {
+                        const resp = await fetch('/nextjs-api/v1/models');
+                        const html = await resp.text();
+                        const match = html.match(/initialModels.*?(\\[\\{.*?\\}\\])/s);
+                        if (!match) return null;
+                        let dataStr = match[1].replace(/\\\\\\"/g, '"').replace(/\\\\"/g, '"');
+                        try {
+                            const models = JSON.parse(dataStr);
+                            return models.map(m => ({id: m.id, publicName: m.publicName, displayName: m.displayName}));
+                        } catch(e) {
+                            return null;
+                        }
+                    })()
+                    """,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE
+                )
+                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+
+                if proc.returncode == 0 and stdout:
+                    models_list = json_mod.loads(stdout.decode().strip())
+                    if models_list and isinstance(models_list, list):
+                        count = self._ingest(models_list)
+                        logger.info(f"Model registry: nạp {count} model từ Arena browser.")
+                        return count
+
+                logger.warning("Model registry: browser fetch thất bại, giữ cache cũ.")
+                return len(self._name_to_id)
             except Exception as e:
                 logger.warning(f"Model registry refresh lỗi: {e}")
                 return len(self._name_to_id)

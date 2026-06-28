@@ -100,6 +100,8 @@ async def chat_completions(
 ):
     msgs, tools_active = _msgs_for_arena(req)
     is_battle = req.model == "arena-battle"
+    # Arena API luôn dùng battle mode cho conversation mới
+    # direct mode chỉ cho follow-up trong conversation đã có
     raw_attachments = _collect_attachments(req.messages)
     try:
         attachments = normalize_attachments(raw_attachments)
@@ -140,6 +142,10 @@ async def chat_completions(
             plan = manager.plan_turn(msgs, req.model, attachments=attachments)
     except ValueError as e:
         raise HTTPException(400, str(e)) from None
+
+    # Arena API: dùng battle mode cho conversation mới, direct cho continuation
+    use_battle = is_battle or not plan.is_continuation
+
     # ── Streaming ──────────────────────────────────────────────────────────
     if req.stream:
 
@@ -147,7 +153,7 @@ async def chat_completions(
             full = ""
             try:
                 async with gate.slot():
-                    stream = client.stream_battle(plan) if is_battle else client.stream_direct(plan)
+                    stream = client.stream_battle(plan) if use_battle else client.stream_direct(plan)
                     first = True
                     async for ev in stream:
                         if ev.kind == "error" and ev.error:
@@ -236,7 +242,7 @@ async def chat_completions(
     # ── Non-streaming ──────────────────────────────────────────────────────
     try:
         async with gate.slot():
-            stream = client.stream_battle(plan) if is_battle else client.stream_direct(plan)
+            stream = client.stream_battle(plan) if use_battle else client.stream_direct(plan)
             full_a = full_b = ""
             async for ev in stream:
                 if ev.kind == "error" and ev.error:

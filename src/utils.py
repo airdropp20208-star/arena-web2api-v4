@@ -145,7 +145,17 @@ def new_chat_id() -> str:
 
 
 def new_uuid() -> str:
-    return str(uuid.uuid4())
+    """Generate UUIDv7 (timestamp-based) cho Arena API."""
+    import time
+    now = int(time.time() * 1000)  # milliseconds
+    rand = random.randbytes(10)
+    # Set version 7
+    rand = bytes([0x70 | (rand[0] & 0x0F)]) + rand[1:]
+    # Set variant 10
+    rand = rand[:2] + bytes([0x80 | (rand[2] & 0x3F)]) + rand[3:]
+    hex_str = rand.hex()
+    ts_hex = format(now, '012x')
+    return f"{ts_hex[:8]}-{ts_hex[8:12]}-{hex_str[:4]}-{hex_str[4:8]}-{hex_str[8:20]}"
 
 
 # ── Conversation hashing (cho multi-turn matching) ─────────────────────────

@@ -45,7 +45,7 @@ ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
 # ── Arena endpoints ────────────────────────────────────────────────────────
 ARENA_BASE = os.getenv("ARENA_BASE", "https://arena.ai").rstrip("/")
 ARENA_STREAM_URL = f"{ARENA_BASE}/nextjs-api/stream/create-evaluation"
-ARENA_MODELS_URL = f"{ARENA_BASE}/nextjs-api/models"
+ARENA_MODELS_URL = f"{ARENA_BASE}/nextjs-api/v1/models"
 ARENA_VOTE_URL = f"{ARENA_BASE}/nextjs-api/vote"
 
 # ── Cookie (single account, backwards-compatible) ──────────────────────────
