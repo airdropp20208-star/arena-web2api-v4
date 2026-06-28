@@ -1,0 +1,92 @@
+"""
+arena-web2api — Biến arena.ai thành OpenAI-compatible API.
+
+Chạy:  python main.py
+Docs:  http://localhost:8000/docs
+"""
+
+from __future__ import annotations
+
+from contextlib import asynccontextmanager
+
+import uvicorn
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
+from src.auth import APIKeyMiddleware
+from src.config import APP_VERSION, HOST, LOG_LEVEL, PORT
+from src.conversation_store import store
+from src.cookie_pool import get_cookie_pool
+from src.logger import setup_logger
+from src.model_registry import registry
+from src.request_id import RequestIDMiddleware
+from src.routes.admin import router as admin_router
+from src.routes.battle import router as battle_router
+from src.routes.chat import router as chat_router
+from src.routes.models import router as models_router
+
+logger = setup_logger("main")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # ── startup ───────────────────────────────────────────────────────────
+    logger.info("=" * 56)
+    logger.info(f"🚀 arena-web2api v{APP_VERSION} đang khởi động...")
+    logger.info(f"📡 Server: http://{HOST}:{PORT}")
+    logger.info(f"📖 Docs:   http://localhost:{PORT}/docs")
+
+    await store.load()
+    pool = await get_cookie_pool()
+    logger.info(f"🍪 Cookie pool: {pool.healthy_count()}/{pool.size} healthy")
+    await pool.start_refresh_loop()
+
+    await registry.start_refresh_loop()
+    logger.info(f"🧠 Model registry: {len(registry.list_models())} model (loading...)")
+
+    logger.info("=" * 56)
+    yield
+    # ── shutdown ──────────────────────────────────────────────────────────
+    logger.info("🛑 Đang tắt...")
+    await registry.stop()
+    pool2 = await get_cookie_pool()
+    await pool2.stop()
+    await store.persist()
+    logger.info("✅ Đã tắt sạch.")
+
+
+app = FastAPI(
+    title="Arena Web2API",
+    description="OpenAI-compatible API cho arena.ai",
+    version=APP_VERSION,
+    docs_url="/docs",
+    redoc_url="/redoc",
+    lifespan=lifespan,
+)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+# Order matters: outermost runs first. APIKey check before RequestID is fine;
+# RequestID should wrap so even 401 responses get an id.
+app.add_middleware(APIKeyMiddleware)
+app.add_middleware(RequestIDMiddleware)
+
+# Routes
+app.include_router(admin_router)  # /health, /cookie-status, /admin/*
+app.include_router(chat_router, prefix="/v1")  # /v1/chat/completions
+app.include_router(battle_router, prefix="/v1")  # /v1/battle, /v1/battle/vote
+app.include_router(models_router, prefix="/v1")  # /v1/models
+
+
+if __name__ == "__main__":
+    uvicorn.run(
+        "main:app",
+        host=HOST,
+        port=PORT,
+        log_level=LOG_LEVEL.lower(),
+        reload=False,
+    )
