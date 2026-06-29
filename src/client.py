@@ -25,7 +25,6 @@ import httpx
 
 from src.circuit_breaker import breaker
 from src.config import (
-    ARENA_STREAM_URL,
     ARENA_VOTE_URL,
     CONNECT_TIMEOUT,
     REQUEST_TIMEOUT,
@@ -46,9 +45,9 @@ from src.errors import (
 from src.logger import setup_logger
 from src.model_registry import registry
 from src.rate_limiter import limiter
-from src.session import acquire_cookie, build_browser_headers, next_proxy
-from src.sse_parser import ArenaEvent, SSEDecoder, iter_arena_events, parse_arena_event
 from src.recaptcha import get_recaptcha_token
+from src.session import acquire_cookie, build_browser_headers, next_proxy
+from src.sse_parser import ArenaEvent, SSEDecoder, parse_arena_event
 from src.utils import backoff_delay, new_uuid
 
 logger = setup_logger(__name__)

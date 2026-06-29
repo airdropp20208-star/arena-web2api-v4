@@ -13,13 +13,11 @@ import asyncio
 import time
 
 from src.config import (
-    ARENA_MODELS_URL,
     MODEL_REGISTRY_ON_STARTUP,
     MODEL_REGISTRY_TTL,
 )
 from src.logger import setup_logger
 from src.models import ModelInfo
-from src.session import build_browser_headers
 from src.utils import DEFAULT_MODELS
 
 logger = setup_logger(__name__)
@@ -103,7 +101,7 @@ class ModelRegistry:
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE
                 )
-                stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+                stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
 
                 if proc.returncode == 0 and stdout:
                     models_list = json_mod.loads(stdout.decode().strip())

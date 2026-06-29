@@ -24,15 +24,22 @@ from fastapi import APIRouter, Header, HTTPException
 
 from src.circuit_breaker import breaker
 from src.concurrency import gate
-from src.config import ADMIN_TOKEN, APP_VERSION, ARENA_AUTH, ARENA_BASE, CF_CLEARANCE, DEFAULT_USER_AGENT
+from src.config import (
+    ADMIN_TOKEN,
+    APP_VERSION,
+    ARENA_AUTH,
+    ARENA_BASE,
+    CF_CLEARANCE,
+    DEFAULT_USER_AGENT,
+)
 from src.conversation_store import store
 from src.cookie_pool import get_cookie_pool
 from src.idempotency import idempotency
 from src.logger import setup_logger
 from src.metrics import metrics
 from src.model_registry import registry
-from src.rate_limiter import limiter
 from src.per_key_rate_limit import per_key_limiter
+from src.rate_limiter import limiter
 
 router = APIRouter()
 logger = setup_logger(__name__)

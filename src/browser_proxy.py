@@ -11,7 +11,6 @@ Tự động:
 from __future__ import annotations
 
 import asyncio
-import json
 import os
 import time
 import uuid

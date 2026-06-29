@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import time
-from typing import Any
 
 from src.config import RATE_LIMIT_RPM
 from src.logger import setup_logger
@@ -22,7 +21,7 @@ PER_KEY_ENABLED: bool = False
 
 
 class _KeyBucket:
-    __slots__ = ("tokens", "last", "capacity", "refill_rate")
+    __slots__ = ("capacity", "last", "refill_rate", "tokens")
 
     def __init__(self, capacity: float):
         self.capacity = capacity

@@ -67,7 +67,7 @@ async def _fetch_token_from_browser() -> str | None:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
-        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
+        stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
 
         if proc.returncode == 0 and stdout:
             result = json.loads(stdout.decode().strip())
