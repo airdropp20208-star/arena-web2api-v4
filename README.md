@@ -17,6 +17,11 @@ rate limiter, metrics.
 | **OpenAI-compatible** | `/v1/chat/completions`, `/v1/models`, streaming SSE chuẩn |
 | **Direct mode** | Chat với model cụ thể (Claude, GPT, Gemini, Grok, Arena Max…) |
 | **Battle mode** | 2 model ẩn danh song song → reveal tên + vote (`/v1/battle`, `/v1/battle/vote`) |
+| **Code / Webdev** | `/v1/code/completions` — Arena webdev mode, sinh code |
+| **Image** | `/v1/image/completions` — Arena image generation |
+| **Video** | `/v1/video/completions` — Arena video generation |
+| **Search** | `/v1/search/completions` — Arena search mode |
+| **Modality param** | Thêm `modality: chat|webdev|image|video|search` vào request body |
 | **Multi-turn thật** | Tái dùng `conversationId` của Arena, gửi **incremental** (không ghép string) |
 | **Dynamic UUID sync** | Tự fetch UUID model từ `/nextjs-api/models`, cache TTL, fallback tĩnh |
 | **SSE parser mạnh** | đúng wire-protocol: multi-line data, comment, partial chunk, finish_reason, reveal |
@@ -83,7 +88,11 @@ Server xoay vòng giữa các cookie, health-check định kỳ, tự cách ly c
 | `GET`  | `/cookie-status` | Trạng thái cookie (legacy) |
 | `GET`  | `/v1/models` | Danh sách model (dynamic) |
 | `GET`  | `/v1/models/refresh` | Force refresh UUID map |
-| `POST` | `/v1/chat/completions` | OpenAI-compatible chat |
+| `POST` | `/v1/chat/completions` | OpenAI-compatible chat (battle/direct) |
+| `POST` | `/v1/code/completions` | Arena webdev mode (code generation) |
+| `POST` | `/v1/image/completions` | Arena image generation mode |
+| `POST` | `/v1/video/completions` | Arena video generation mode |
+| `POST` | `/v1/search/completions` | Arena search mode |
 | `POST` | `/v1/battle` | Battle mode (response tách biệt + reveal) |
 | `POST` | `/v1/battle/vote` | Vote cho battle |
 | `GET`  | `/admin/status` | Tổng quan hệ thống |
@@ -108,6 +117,42 @@ curl http://localhost:8000/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"claude-opus-4-6",
        "messages":[{"role":"user","content":"Xin chào!"}]}'
+```
+
+### Code / Webdev mode
+```bash
+curl http://localhost:8000/v1/code/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Create a todo app with React"}]}'
+```
+
+### Image generation
+```bash
+curl http://localhost:8000/v1/image/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"A cat wearing a hat"}]}'
+```
+
+### Video generation
+```bash
+curl http://localhost:8000/v1/video/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"A sunset timelapse"}]}'
+```
+
+### Search
+```bash
+curl http://localhost:8000/v1/search/completions \
+  -H "Content-Type: application/json" \
+  -d '{"messages":[{"role":"user","content":"Latest AI news"}]}'
+```
+
+### Or use modality parameter on /v1/chat/completions
+```bash
+curl http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{"modality":"webdev",
+       "messages":[{"role":"user","content":"Build a dashboard"}]}'
 ```
 
 ### Battle mode

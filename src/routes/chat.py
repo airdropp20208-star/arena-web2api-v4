@@ -100,6 +100,16 @@ async def chat_completions(
 ):
     msgs, tools_active = _msgs_for_arena(req)
     is_battle = req.model == "arena-battle"
+    # Xác định modality: từ request hoặc infer từ model name
+    modality = req.modality or "chat"
+    if req.model.startswith("arena-code") or req.model.startswith("arena-webdev"):
+        modality = "webdev"
+    elif req.model.startswith("arena-image"):
+        modality = "image"
+    elif req.model.startswith("arena-video"):
+        modality = "video"
+    elif req.model.startswith("arena-search"):
+        modality = "search"
     # Arena API luôn dùng battle mode cho conversation mới
     # direct mode chỉ cho follow-up trong conversation đã có
     raw_attachments = _collect_attachments(req.messages)
@@ -153,7 +163,7 @@ async def chat_completions(
             full = ""
             try:
                 async with gate.slot():
-                    stream = client.stream_battle(plan) if use_battle else client.stream_direct(plan)
+                    stream = client.stream_battle(plan, modality=modality) if use_battle else client.stream_direct(plan, modality=modality)
                     first = True
                     async for ev in stream:
                         if ev.kind == "error" and ev.error:
@@ -242,7 +252,7 @@ async def chat_completions(
     # ── Non-streaming ──────────────────────────────────────────────────────
     try:
         async with gate.slot():
-            stream = client.stream_battle(plan) if use_battle else client.stream_direct(plan)
+            stream = client.stream_battle(plan, modality=modality) if use_battle else client.stream_direct(plan, modality=modality)
             full_a = full_b = ""
             async for ev in stream:
                 if ev.kind == "error" and ev.error:
@@ -366,3 +376,34 @@ async def chat_completions(
     if idempotency.enabled() and idempotency_key:
         await idempotency.put(idempotency_key, response)
     return response
+
+
+# ── Additional modality endpoints ──────────────────────────────────────────
+
+
+@router.post("/code/completions")
+async def code_completions(req: ChatRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    """POST /v1/code/completions — Arena webdev mode."""
+    req.modality = "webdev"
+    return await chat_completions(req, idempotency_key)
+
+
+@router.post("/image/completions")
+async def image_completions(req: ChatRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    """POST /v1/image/completions — Arena image generation mode."""
+    req.modality = "image"
+    return await chat_completions(req, idempotency_key)
+
+
+@router.post("/video/completions")
+async def video_completions(req: ChatRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    """POST /v1/video/completions — Arena video generation mode."""
+    req.modality = "video"
+    return await chat_completions(req, idempotency_key)
+
+
+@router.post("/search/completions")
+async def search_completions(req: ChatRequest, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    """POST /v1/search/completions — Arena search mode."""
+    req.modality = "search"
+    return await chat_completions(req, idempotency_key)

@@ -84,7 +84,7 @@ def _attachments_payload(attachments: list) -> list[dict]:
     return out
 
 
-def build_direct_payload(plan: TurnPlan, recaptcha_token: str | None = None) -> dict:
+def build_direct_payload(plan: TurnPlan, recaptcha_token: str | None = None, *, modality: str = "chat") -> dict:
     conv = plan.conversation
     payload = {
         "id": new_uuid(),
@@ -98,14 +98,14 @@ def build_direct_payload(plan: TurnPlan, recaptcha_token: str | None = None) -> 
             "experimental_attachments": _attachments_payload(plan.attachments),
             "metadata": {},
         },
-        "modality": "chat",
+        "modality": modality,
     }
     if recaptcha_token:
         payload["recaptchaV3Token"] = recaptcha_token
     return payload
 
 
-def build_battle_payload(plan: TurnPlan, recaptcha_token: str | None = None) -> dict:
+def build_battle_payload(plan: TurnPlan, recaptcha_token: str | None = None, *, modality: str = "chat") -> dict:
     conv = plan.conversation
     payload = {
         "id": new_uuid(),
@@ -119,7 +119,7 @@ def build_battle_payload(plan: TurnPlan, recaptcha_token: str | None = None) -> 
             "experimental_attachments": _attachments_payload(plan.attachments),
             "metadata": {},
         },
-        "modality": "chat",
+        "modality": modality,
     }
     if recaptcha_token:
         payload["recaptchaV3Token"] = recaptcha_token
@@ -299,14 +299,14 @@ class ArenaClient:
         else:
             await breaker.success()
 
-    async def stream_direct(self, plan: TurnPlan) -> AsyncIterator[ArenaEvent]:
+    async def stream_direct(self, plan: TurnPlan, *, modality: str = "chat") -> AsyncIterator[ArenaEvent]:
         recaptcha_token = await get_recaptcha_token()
-        async for ev in self._stream_grounded(build_direct_payload(plan, recaptcha_token), label="direct"):
+        async for ev in self._stream_grounded(build_direct_payload(plan, recaptcha_token, modality=modality), label="direct"):
             yield ev
 
-    async def stream_battle(self, plan: TurnPlan) -> AsyncIterator[ArenaEvent]:
+    async def stream_battle(self, plan: TurnPlan, *, modality: str = "chat") -> AsyncIterator[ArenaEvent]:
         recaptcha_token = await get_recaptcha_token()
-        async for ev in self._stream_grounded(build_battle_payload(plan, recaptcha_token), label="battle"):
+        async for ev in self._stream_grounded(build_battle_payload(plan, recaptcha_token, modality=modality), label="battle"):
             yield ev
 
     async def submit_vote(self, conversation_id: str, vote: str) -> dict:

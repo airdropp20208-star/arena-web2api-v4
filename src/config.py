@@ -52,6 +52,10 @@ ARENA_VOTE_URL = f"{ARENA_BASE}/nextjs-api/vote"
 ARENA_AUTH = os.getenv("ARENA_AUTH_COOKIE", "")
 CF_CLEARANCE = os.getenv("CF_CLEARANCE", "")
 
+# ── Arena credentials (cho browser proxy auto-login) ──────────────────────
+ARENA_EMAIL = os.getenv("ARENA_EMAIL", "")
+ARENA_PASSWORD = os.getenv("ARENA_PASSWORD", "")
+
 # ── Cookie pool (nhiều account, xoay vòng) ─────────────────────────────────
 # CSV: "arena-auth-1|cf-clearance-1,arena-auth-2|cf-clearance-2"
 COOKIE_POOL_RAW = os.getenv("COOKIE_POOL", "")

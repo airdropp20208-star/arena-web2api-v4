@@ -79,6 +79,11 @@ class Message(BaseModel):
         return result
 
 
+# ── Modality ────────────────────────────────────────────────────────────────
+Modality = Literal["chat", "webdev", "image", "video", "search"]
+Mode = Literal["battle", "direct", "direct-battle", "side-by-side"]
+
+
 class ChatRequest(BaseModel):
     model: str = "arena-auto"
     messages: list[Message]
@@ -99,6 +104,11 @@ class ChatRequest(BaseModel):
     # Tool / function calling
     tools: list[dict] | None = None
     tool_choice: Any | None = None
+    # Arena extensions
+    modality: Modality | None = None  # chat, webdev, image, video, search
+    mode: Mode | None = None          # battle, direct, direct-battle, side-by-side
+    model_a_id: str | None = None     # UUID model A (direct mode)
+    model_b_id: str | None = None     # UUID model B (battle/side-by-side)
 
     def model_post_init(self, __context: Any) -> None:
         if len(self.messages) > 500:
