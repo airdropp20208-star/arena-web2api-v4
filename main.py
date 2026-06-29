@@ -98,6 +98,7 @@ async def validation_exception_handler(request, exc: RequestValidationError):
         },
     )
 
+
 # Routes
 app.include_router(admin_router, tags=["Admin"])  # /health, /cookie-status, /admin/*
 app.include_router(chat_router, prefix="/v1", tags=["Chat"])  # /v1/chat/completions
