@@ -106,9 +106,9 @@ class ChatRequest(BaseModel):
     tool_choice: Any | None = None
     # Arena extensions
     modality: Modality | None = None  # chat, webdev, image, video, search
-    mode: Mode | None = None          # battle, direct, direct-battle, side-by-side
-    model_a_id: str | None = None     # UUID model A (direct mode)
-    model_b_id: str | None = None     # UUID model B (battle/side-by-side)
+    mode: Mode | None = None  # battle, direct, direct-battle, side-by-side
+    model_a_id: str | None = None  # UUID model A (direct mode)
+    model_b_id: str | None = None  # UUID model B (battle/side-by-side)
 
     def model_post_init(self, __context: Any) -> None:
         if len(self.messages) > 500:

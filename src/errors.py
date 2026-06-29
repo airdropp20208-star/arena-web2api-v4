@@ -23,7 +23,10 @@ class ArenaWeb2APIError(Exception):
 class NoCookiesError(ArenaWeb2APIError):
     status = 503
 
-    def __init__(self, message: str = "Không có cookie nào khả dụng trong pool. / No cookies available in pool."):
+    def __init__(
+        self,
+        message: str = "Không có cookie nào khả dụng trong pool. / No cookies available in pool.",
+    ):
         super().__init__(message)
 
 

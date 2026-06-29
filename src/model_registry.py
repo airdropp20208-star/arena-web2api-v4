@@ -82,7 +82,8 @@ class ModelRegistry:
             try:
                 # Dùng agent-browser để lấy models (browser có cookies đúng)
                 proc = await asyncio.create_subprocess_exec(
-                    "agent-browser", "eval",
+                    "agent-browser",
+                    "eval",
                     """
                     (async () => {
                         const resp = await fetch('/nextjs-api/v1/models');
@@ -99,7 +100,7 @@ class ModelRegistry:
                     })()
                     """,
                     stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE
+                    stderr=asyncio.subprocess.PIPE,
                 )
                 stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
 

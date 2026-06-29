@@ -51,7 +51,8 @@ async def _fetch_token_from_browser() -> str | None:
     """Sử dụng agent-browser để lấy reCAPTCHA token."""
     try:
         proc = await asyncio.create_subprocess_exec(
-            "agent-browser", "eval",
+            "agent-browser",
+            "eval",
             """
             (async () => {
                 if (typeof grecaptcha === 'undefined' || !grecaptcha.enterprise) {
@@ -65,7 +66,7 @@ async def _fetch_token_from_browser() -> str | None:
             })()
             """,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE
+            stderr=asyncio.subprocess.PIPE,
         )
         stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
 

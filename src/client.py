@@ -83,7 +83,9 @@ def _attachments_payload(attachments: list) -> list[dict]:
     return out
 
 
-def build_direct_payload(plan: TurnPlan, recaptcha_token: str | None = None, *, modality: str = "chat") -> dict:
+def build_direct_payload(
+    plan: TurnPlan, recaptcha_token: str | None = None, *, modality: str = "chat"
+) -> dict:
     conv = plan.conversation
     payload = {
         "id": new_uuid(),
@@ -104,7 +106,9 @@ def build_direct_payload(plan: TurnPlan, recaptcha_token: str | None = None, *, 
     return payload
 
 
-def build_battle_payload(plan: TurnPlan, recaptcha_token: str | None = None, *, modality: str = "chat") -> dict:
+def build_battle_payload(
+    plan: TurnPlan, recaptcha_token: str | None = None, *, modality: str = "chat"
+) -> dict:
     conv = plan.conversation
     payload = {
         "id": new_uuid(),
@@ -298,14 +302,22 @@ class ArenaClient:
         else:
             await breaker.success()
 
-    async def stream_direct(self, plan: TurnPlan, *, modality: str = "chat") -> AsyncIterator[ArenaEvent]:
+    async def stream_direct(
+        self, plan: TurnPlan, *, modality: str = "chat"
+    ) -> AsyncIterator[ArenaEvent]:
         recaptcha_token = await get_recaptcha_token()
-        async for ev in self._stream_grounded(build_direct_payload(plan, recaptcha_token, modality=modality), label="direct"):
+        async for ev in self._stream_grounded(
+            build_direct_payload(plan, recaptcha_token, modality=modality), label="direct"
+        ):
             yield ev
 
-    async def stream_battle(self, plan: TurnPlan, *, modality: str = "chat") -> AsyncIterator[ArenaEvent]:
+    async def stream_battle(
+        self, plan: TurnPlan, *, modality: str = "chat"
+    ) -> AsyncIterator[ArenaEvent]:
         recaptcha_token = await get_recaptcha_token()
-        async for ev in self._stream_grounded(build_battle_payload(plan, recaptcha_token, modality=modality), label="battle"):
+        async for ev in self._stream_grounded(
+            build_battle_payload(plan, recaptcha_token, modality=modality), label="battle"
+        ):
             yield ev
 
     async def submit_vote(self, conversation_id: str, vote: str) -> dict:

@@ -64,9 +64,7 @@ class PerKeyRateLimiter:
             now = time.time()
             if now - self._cleanup_at > 300:
                 self._cleanup_at = now
-                self._buckets = {
-                    k: v for k, v in self._buckets.items() if now - v.last < 600
-                }
+                self._buckets = {k: v for k, v in self._buckets.items() if now - v.last < 600}
             return allowed
 
     def snapshot(self) -> dict:

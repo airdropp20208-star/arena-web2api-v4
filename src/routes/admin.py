@@ -55,6 +55,7 @@ def _get_memory_usage() -> dict:
     """Process memory usage (RSS, VMS)."""
     try:
         import resource
+
         usage = resource.getrusage(resource.RUSAGE_SELF)
         return {
             "rss_mb": round(usage.ru_maxrss / 1024, 1),
