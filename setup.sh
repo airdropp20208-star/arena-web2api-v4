@@ -2,26 +2,68 @@
 set -e
 
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "   arena-web2api — Setup Script"
+echo "   arena-web2api v4 — Setup Script"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# Cập nhật package list
-echo "📦 Cập nhật apt..."
-apt-get update -qq
+# Phát hiện môi trường
+if [ -d "/data/data/com.termux" ]; then
+    echo "📱 Phát hiện Termux (Android)"
+    IS_TERMUX=1
+else
+    IS_TERMUX=0
+fi
 
-# Cài Python nếu chưa có
-if ! command -v python3 &>/dev/null; then
-    echo "🐍 Cài Python3..."
-    apt-get install -y python3 python3-pip -qq
+# Cập nhật package list
+if [ "$IS_TERMUX" = "1" ]; then
+    echo "📦 Cập nhật Termux packages..."
+    pkg update -y -qq
+    # Cài build deps cho tiktoken
+    pkg install -y python python-pip rust binutils clang make -qq
+else
+    if command -v apt-get &>/dev/null; then
+        echo "📦 Cập nhật apt..."
+        apt-get update -qq
+    fi
+    # Cài Python nếu chưa có
+    if ! command -v python3 &>/dev/null; then
+        echo "🐍 Cài Python3..."
+        apt-get install -y python3 python3-pip -qq
+    fi
 fi
 
 # Cài pip nếu chưa có
 if ! command -v pip3 &>/dev/null; then
-    apt-get install -y python3-pip -qq
+    if [ "$IS_TERMUX" = "1" ]; then
+        pkg install -y python-pip -qq
+    else
+        apt-get install -y python3-pip -qq
+    fi
 fi
 
 echo "📥 Cài dependencies..."
-pip3 install -r requirements.txt --quiet
+if [ "$IS_TERMUX" = "1" ]; then
+    # Termux: cần --break-system-packages hoặc dùng venv
+    pip3 install -r requirements.txt --quiet --break-system-packages 2>&1 || {
+        echo "⚠  pip install fail — thử install từng package"
+        for pkg in $(cat requirements.txt); do
+            pip3 install "$pkg" --quiet --break-system-packages 2>&1 | tail -2
+        done
+    }
+    # curl for keepalive.sh + test scripts — fix #28
+    pkg install -y curl -qq 2>/dev/null || true
+    # Optional: Termux:API cho keepalive (battery, sensors)
+    pkg install -y termux-api -qq 2>/dev/null || true
+    echo "ℹ  Để dùng keepalive.sh đầy đủ, cài Termux:API app từ F-Droid/Play Store"
+else
+    pip3 install -r requirements.txt --quiet
+    # Ensure curl installed
+    if ! command -v curl &>/dev/null; then
+        apt-get install -y curl -qq
+    fi
+fi
+
+# Tạo thư mục data
+mkdir -p data
 
 # Tạo .env nếu chưa có
 if [ ! -f .env ]; then
@@ -39,7 +81,13 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo "✅ Setup hoàn tất!"
 echo ""
 echo "Bước tiếp theo:"
-echo "  1. Lấy cookie từ Kiwi Browser (xem README.md)"
-echo "  2. nano .env  →  điền cookie"
-echo "  3. python3 main.py"
+echo "  1. Cài extension trên Kiwi Browser (xem extension/README.md)"
+echo "  2. Lấy cookie từ Kiwi (extension có nút 'Test Cookies' auto-extract)"
+echo "  3. nano .env  →  điền cookie"
+echo "  4. Để chạy ngầm hoàn toàn:"
+echo "     nohup bash keepalive.sh > /tmp/keepalive.log 2>&1 &"
+echo "  5. Server: python3 main.py (hoặc keepalive.sh tự start)"
+echo ""
+echo "Để dừng mọi thứ:"
+echo "  pkill -f keepalive.sh; pkill -f 'python3 main.py'"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

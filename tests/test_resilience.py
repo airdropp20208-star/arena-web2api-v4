@@ -211,7 +211,7 @@ def test_auto_reconnect_dedup():
         def __init__(self):
             self._call = 0
 
-        async def _stream_attempt(self, payload):
+        async def _stream_attempt(self, payload, cookie_entry=None, proxy=None):
             self._call += 1
             if self._call == 1:
                 yield ArenaEvent(kind="delta", content="Hello")
@@ -222,10 +222,28 @@ def test_auto_reconnect_dedup():
 
     fc = FakeClient()
 
+    # Stub acquire_cookie + next_proxy + get_recaptcha_token
+    async def fake_acquire():
+        from src.cookie_pool import CookieEntry
+        return CookieEntry(arena_auth="fake", cf_clearance="fake", label="test")
+
+    import src.client as cm_mod
+    orig_acquire = cm_mod.acquire_cookie
+    orig_recaptcha = cm_mod.get_recaptcha_token
+    cm_mod.acquire_cookie = fake_acquire
+    async def fake_recaptcha(*a, **kw):
+        return None
+    cm_mod.get_recaptcha_token = fake_recaptcha
+
     async def run():
         return [ev.content async for ev in fc._stream_with_retry({"mode": "direct"}, label="t")]
 
-    out = asyncio.run(run())
+    try:
+        out = asyncio.run(run())
+    finally:
+        cm_mod.acquire_cookie = orig_acquire
+        cm_mod.get_recaptcha_token = orig_recaptcha
+
     joined = "".join(out)
     assert joined == "Hello there!", f"got {joined!r}"
     assert joined.count("Hello") == 1
@@ -238,14 +256,26 @@ def test_empty_stream_raises():
     from src.errors import ArenaError, ArenaServerError
 
     class FakeClient(cm.ArenaClient):
-        async def _stream_attempt(self, payload):
+        async def _stream_attempt(self, payload, cookie_entry=None, proxy=None):
             # mô phỏng stream rỗng: yield 0 events rồi raise ArenaServerError
-            # (giống logic thật trong _stream_attempt khi `not started`)
             if False:
                 yield  # keep it a generator
             raise ArenaServerError(502, "Arena stream trả về rỗng (0 events).")
 
     fc = FakeClient()
+
+    # Stub acquire_cookie + get_recaptcha_token
+    async def fake_acquire():
+        from src.cookie_pool import CookieEntry
+        return CookieEntry(arena_auth="fake", cf_clearance="fake", label="test")
+
+    import src.client as cm_mod
+    orig_acquire = cm_mod.acquire_cookie
+    orig_recaptcha = cm_mod.get_recaptcha_token
+    cm_mod.acquire_cookie = fake_acquire
+    async def fake_recaptcha(*a, **kw):
+        return None
+    cm_mod.get_recaptcha_token = fake_recaptcha
 
     async def run():
         try:
@@ -255,7 +285,12 @@ def test_empty_stream_raises():
         except ArenaError as e:
             return f"raised-{e.status}"
 
-    result = asyncio.run(run())
+    try:
+        result = asyncio.run(run())
+    finally:
+        cm_mod.acquire_cookie = orig_acquire
+        cm_mod.get_recaptcha_token = orig_recaptcha
+
     assert "raised-502" in result, f"empty stream should raise 502, got {result}"
     print("✓ empty stream → ArenaServerError 502 (not silent success)")
 
@@ -383,17 +418,30 @@ def test_breaker_neutral_on_generator_close():
     import src.circuit_breaker as cb_mod
 
     cb_mod.CB_ENABLED = True
-    from src.client import ArenaClient, breaker
+    from src.client import ArenaClient, breaker, acquire_cookie, get_recaptcha_token
     from src.sse_parser import ArenaEvent
 
     class FakeClient(ArenaClient):
-        async def _stream_attempt(self, payload):
+        async def _stream_attempt(self, payload, cookie_entry=None, proxy=None):
             yield ArenaEvent(content="partial")
             # generator sẽ bị close ở đây → GeneratorExit
 
     fc = FakeClient()
     breaker.state = cb_mod.State.CLOSED
     breaker._failures = 0
+
+    # Stub acquire_cookie + get_recaptcha_token
+    async def fake_acquire():
+        from src.cookie_pool import CookieEntry
+        return CookieEntry(arena_auth="fake", cf_clearance="fake", label="test")
+
+    import src.client as cm_mod
+    orig_acquire = cm_mod.acquire_cookie
+    orig_recaptcha = cm_mod.get_recaptcha_token
+    cm_mod.acquire_cookie = fake_acquire
+    async def fake_recaptcha(*a, **kw):
+        return None
+    cm_mod.get_recaptcha_token = fake_recaptcha
 
     async def run():
         gen = fc._stream_grounded({}, label="t")
@@ -402,7 +450,12 @@ def test_breaker_neutral_on_generator_close():
         await gen.aclose()  # simulate client disconnect
         return breaker.state.value, breaker._failures
 
-    state, failures = asyncio.run(run())
+    try:
+        state, failures = asyncio.run(run())
+    finally:
+        cm_mod.acquire_cookie = orig_acquire
+        cm_mod.get_recaptcha_token = orig_recaptcha
+
     # GeneratorExit → neutral, không trip, không success
     assert failures == 0, f"breaker should not count failure on disconnect, got {failures}"
     print(f"✓ breaker neutral on GeneratorExit (state={state}, failures={failures})")

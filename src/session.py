@@ -15,16 +15,21 @@ logger = setup_logger(__name__)
 
 
 def build_browser_headers(extra: dict | None = None) -> dict:
-    """Headers giả lập browser thật cho request tới Arena."""
+    """
+    Headers giả lập browser thật cho request tới Arena.
+
+    Quan trọng: UA và sec-ch-ua-platform phải khớp (Linux UA → Linux platform).
+    Mismatch → Cloudflare bot detection block request với 403 empty body.
+    """
     headers = {
-        "accept": "text/event-stream",
+        "accept": "*/*",
         "accept-language": "en-US,en;q=0.9",
-        "content-type": "application/json",
+        "content-type": "text/plain;charset=UTF-8",
         "origin": ARENA_BASE,
         "referer": f"{ARENA_BASE}/",
-        "sec-ch-ua": '"Chromium";v="124", "Google Chrome";v="124"',
+        "sec-ch-ua": '"Chromium";v="124", "Not.A/Brand";v="99"',
         "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Windows"',
+        "sec-ch-ua-platform": '"Linux"',  # match UA platform
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-origin",

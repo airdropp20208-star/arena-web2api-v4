@@ -86,10 +86,35 @@ class ArenaAuthError(ArenaError):
     """401/403 — cookie hết hạn hoặc bị Cloudflare chặn."""
 
     def __init__(self, message: str):
-        hint = (
-            f"{message}\n→ Cookie hết hạn hoặc bị Cloudflare chặn.\n"
-            "→ Cập nhật ARENA_AUTH_COOKIE + CF_CLEARANCE rồi gọi POST /admin/cookies/refresh"
-        )
+        # Detect specific failure mode — fix #15
+        msg_lower = message.lower()
+        if "recaptcha" in msg_lower:
+            self.failure_mode = "recaptcha"
+            hint = (
+                f"{message}\n→ reCAPTCHA validation failed.\n"
+                "→ Token gen OK nhưng Arena reject. Có thể score thấp hoặc token expired.\n"
+                "→ Extension sẽ tự gen lại token mới (force_refresh)."
+            )
+        elif "banned" in msg_lower or "suspended" in msg_lower or "disabled" in msg_lower:
+            self.failure_mode = "banned"
+            hint = (
+                f"{message}\n→ Account có thể bị ban.\n"
+                "→ Tạo account Arena mới + login lại trên Kiwi.\n"
+                "→ Nếu dùng COOKIE_POOL, remove account bị ban khỏi pool."
+            )
+        elif "cloudflare" in msg_lower or "cf-" in msg_lower or "challenge" in msg_lower:
+            self.failure_mode = "cloudflare"
+            hint = (
+                f"{message}\n→ Cloudflare block (cf_clearance hết hạn hoặc IP bị flag).\n"
+                "→ Refresh cf_clearance: extension 'Test Cookies' hoặc login lại arena.ai.\n"
+                "→ Nếu vẫn fail, đổi IP (restart 4G/5G hoặc dùng proxy)."
+            )
+        else:
+            self.failure_mode = "auth_expired"
+            hint = (
+                f"{message}\n→ Cookie hết hạn hoặc bị Cloudflare chặn.\n"
+                "→ Cập nhật ARENA_AUTH_COOKIE + CF_CLEARANCE rồi gọi POST /admin/cookies/refresh"
+            )
         super().__init__(403, hint)
 
 

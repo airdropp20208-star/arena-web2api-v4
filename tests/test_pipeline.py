@@ -23,7 +23,7 @@ def make_mock(events_per_call):
     """events_per_call: list của list ArenaEvent — mỗi call lấy 1 list."""
     state = {"i": 0}
 
-    async def fake_stream(self, payload):
+    async def fake_stream(self, payload, cookie_entry=None, proxy=None):
         idx = min(state["i"], len(events_per_call) - 1)
         state["i"] += 1
         _call_log.append(
@@ -65,7 +65,24 @@ def reset_mock(events):
     store._convs.clear()
 
 
+# ── Stubs cho cookie + reCAPTCHA (để _stream_with_retry không fail) ────────
+def _install_stubs():
+    """Patch acquire_cookie + get_recaptcha_token để test pipeline không cần .env."""
+    import asyncio
+    from src.cookie_pool import CookieEntry
+
+    async def fake_acquire():
+        return CookieEntry(arena_auth="fake", cf_clearance="fake", label="test")
+
+    async def fake_recaptcha(*a, **kw):
+        return None
+
+    client_mod.acquire_cookie = fake_acquire
+    client_mod.get_recaptcha_token = fake_recaptcha
+
+
 def main():
+    _install_stubs()
     with TestClient(__import__("main").app) as c:
         # ── 1. Direct chat (non-stream) ────────────────────────────────
         print("\n=== TEST 1: Direct chat (non-stream) ===")

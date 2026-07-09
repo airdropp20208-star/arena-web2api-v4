@@ -3,6 +3,9 @@ Concurrency control — tránh quá tải upstream Arena.
 
 ConcurrencyGate: semaphore toàn cục + bounded queue (đợi chỗ trống, timeout).
 Khi đầy, request vào hàng đợi (queue) — vượt MAX_QUEUE_SIZE → reject 503.
+
+ConversationLock: per-conversation lock — fix #23. Tránh 2 request cùng
+conversation_id gửi đồng thời tới Arena (race condition server-side).
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from contextlib import asynccontextmanager
 from src.config import (
     MAX_CONCURRENT_REQUESTS,
     MAX_QUEUE_SIZE,
+    PER_CONVERSATION_LOCK,
 )
 from src.errors import ArenaWeb2APIError
 from src.logger import setup_logger
@@ -75,4 +79,65 @@ class ConcurrencyGate:
         }
 
 
+class ConversationLockManager:
+    """
+    Per-conversation lock — fix #23.
+
+    Khi 2 request cùng conversation_id tới đồng thời → Arena có thể race
+    (reject 1, conflict state). Lock này serialize request theo conversation_id.
+
+    Locks auto-evict sau 5 phút không dùng để tránh memory leak.
+    """
+
+    def __init__(self) -> None:
+        self._locks: dict[str, asyncio.Lock] = {}
+        self._last_used: dict[str, float] = {}
+        self._cleanup_lock = asyncio.Lock()
+        self._evict_ttl = 300.0  # 5 min
+
+    @asynccontextmanager
+    async def acquire(self, conversation_id: str | None) -> AsyncIterator[None]:
+        """Acquire lock for conversation. None = no lock (new conversation)."""
+        if not PER_CONVERSATION_LOCK or not conversation_id:
+            yield
+            return
+
+        async with self._cleanup_lock:
+            if conversation_id not in self._locks:
+                self._locks[conversation_id] = asyncio.Lock()
+            self._last_used[conversation_id] = asyncio.get_event_loop().time()
+            lock = self._locks[conversation_id]
+
+        async with lock:
+            yield
+
+        # Periodic cleanup (every 60s, lazy)
+        await self._maybe_cleanup()
+
+    async def _maybe_cleanup(self) -> None:
+        """Evict locks not used in _evict_ttl seconds."""
+        async with self._cleanup_lock:
+            now = asyncio.get_event_loop().time()
+            if now % 60 > 5:  # only ~once per minute
+                return
+            to_evict = [
+                k for k, t in self._last_used.items()
+                if (now - t) > self._evict_ttl
+            ]
+            for k in to_evict:
+                # Only evict if not currently held
+                lock = self._locks.get(k)
+                if lock and not lock.locked():
+                    self._locks.pop(k, None)
+                    self._last_used.pop(k, None)
+
+    def snapshot(self) -> dict:
+        return {
+            "enabled": PER_CONVERSATION_LOCK,
+            "active_locks": len(self._locks),
+            "held_locks": sum(1 for l in self._locks.values() if l.locked()),
+        }
+
+
 gate = ConcurrencyGate()
+conv_locks = ConversationLockManager()

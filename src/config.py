@@ -35,12 +35,36 @@ def _get_list(key: str, default: str = "") -> list[str]:
 
 
 # ── Server ─────────────────────────────────────────────────────────────────
-HOST = os.getenv("HOST", "0.0.0.0")
+# Default bind 127.0.0.1 (localhost only) for security.
+# Set HOST=0.0.0.0 ONLY if you need access from other devices on LAN.
+# WARNING: 0.0.0.0 exposes server publicly — always set API_KEYS + ADMIN_TOKEN.
+HOST = os.getenv("HOST", "127.0.0.1")
 PORT = _get_int("PORT", "8000")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 DEBUG = _get_bool("DEBUG", "false")
-# khoá API đơn giản cho endpoint admin nhạy cảm (trống = cho phép tất cả)
+# Bảo vệ endpoint admin nhạy cảm (trống = cho phép tất cả — KHÔNG recommended)
 ADMIN_TOKEN = os.getenv("ADMIN_TOKEN", "")
+
+# ── Security warnings ──────────────────────────────────────────────────────
+# Warn at import time if insecure defaults are used
+def _security_warnings():
+    warnings = []
+    if HOST == "0.0.0.0" and not API_KEYS and not API_KEY_ENABLED:
+        warnings.append(
+            "⚠️  HOST=0.0.0.0 but no API_KEYS set — server is PUBLIC + UNAUTHENTICATED. "
+            "Anyone on your network can use it. Set API_KEYS=yourkey or HOST=127.0.0.1."
+        )
+    if HOST == "0.0.0.0" and not ADMIN_TOKEN:
+        warnings.append(
+            "⚠️  HOST=0.0.0.0 but no ADMIN_TOKEN set — /admin/* endpoints are PUBLIC. "
+            "Anyone can view cookies, metrics, broker status. Set ADMIN_TOKEN."
+        )
+    if DEBUG and HOST == "0.0.0.0":
+        warnings.append(
+            "⚠️  DEBUG=true + HOST=0.0.0.0 — full request/response logged + publicly accessible. "
+            "Set DEBUG=false or HOST=127.0.0.1."
+        )
+    return warnings
 
 # ── Arena endpoints ────────────────────────────────────────────────────────
 ARENA_BASE = os.getenv("ARENA_BASE", "https://arena.ai").rstrip("/")
@@ -55,6 +79,35 @@ CF_CLEARANCE = os.getenv("CF_CLEARANCE", "")
 # ── Arena credentials (cho browser proxy auto-login) ──────────────────────
 ARENA_EMAIL = os.getenv("ARENA_EMAIL", "")
 ARENA_PASSWORD = os.getenv("ARENA_PASSWORD", "")
+
+# ── reCAPTCHA solver (Approach A→B fallback) ──────────────────────────────
+# Chiến lược:
+#   "skip"       — không gửi recaptchaV3Token (hy vọng Arena backend không enforce)
+#   "2captcha"   — gọi 2Captcha API để lấy token (cần TWO_CAPTCHA_API_KEY, $)
+#   "browser"    — gen token qua Playwright (chỉ chạy được trên máy có display)
+#                  KHÔNG khuyến nghị dùng cho production server
+#   "extension"  — ✅ RECOMMENDED cho ĐT/VPS free. Kiwi Browser cài extension,
+#                  extension gen token trong arena.ai tab, gửi về server qua WS.
+RECAPTCHA_SOLVER = os.getenv("RECAPTCHA_SOLVER", "skip").lower().strip()
+TWO_CAPTCHA_API_KEY = os.getenv("TWO_CAPTCHA_API_KEY", "")
+# Site key reCAPTCHA Enterprise của Arena (extracted from page)
+RECAPTCHA_SITE_KEY = os.getenv("RECAPTCHA_SITE_KEY", "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0")
+# Action mà Arena expects (from captured payload)
+RECAPTCHA_ACTION = os.getenv("RECAPTCHA_ACTION", "chat_submit")
+# Cache token trong bao lâu (giây). reCAPTCHA v3 token valid ~120s, conservative 90s.
+# Lưu ý: extension strategy không cache (token single-use).
+RECAPTCHA_TOKEN_TTL = _get_int("RECAPTCHA_TOKEN_TTL", "90")
+# Timeout cho solver (giây) — 2Captcha 10-30s, extension ~2s, browser ~1s
+RECAPTCHA_SOLVE_TIMEOUT = _get_int("RECAPTCHA_SOLVE_TIMEOUT", "30")
+# Min score yêu cầu (cho 2captcha request)
+RECAPTCHA_MIN_SCORE = _get_float("RECAPTCHA_MIN_SCORE", "0.7")
+
+# ── Token broker (cho extension strategy) ─────────────────────────────────
+# WebSocket server mà extension kết nối tới. Mặc định localhost:8765.
+TOKEN_BROKER_HOST = os.getenv("TOKEN_BROKER_HOST", "127.0.0.1")
+TOKEN_BROKER_PORT = _get_int("TOKEN_BROKER_PORT", "8765")
+# Bật token broker server (chỉ tắt khi không dùng extension strategy)
+TOKEN_BROKER_ENABLED = _get_bool("TOKEN_BROKER_ENABLED", "true")
 
 # ── Cookie pool (nhiều account, xoay vòng) ─────────────────────────────────
 # CSV: "arena-auth-1|cf-clearance-1,arena-auth-2|cf-clearance-2"
@@ -142,7 +195,7 @@ LOG_JSON = _get_bool("LOG_JSON", "false")
 
 # ── Misc ───────────────────────────────────────────────────────────────────
 DEFAULT_USER_AGENT = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "Mozilla/5.0 (X11; Linux x86_64) "
     "AppleWebKit/537.36 (KHTML, like Gecko) "
     "Chrome/124.0.0.0 Safari/537.36"
 )

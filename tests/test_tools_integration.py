@@ -19,13 +19,27 @@ from src.sse_parser import ArenaEvent
 def make_mock(reply_events):
     state = {"i": 0}
 
-    async def fake_stream(self, payload):
+    async def fake_stream(self, payload, cookie_entry=None, proxy=None):
         idx = min(state["i"], len(reply_events) - 1)
         state["i"] += 1
         for ev in reply_events[idx]:
             yield ev
 
     return fake_stream
+
+
+# ── Stubs cho cookie + reCAPTCHA ──────────────────────────────────────────
+def _install_stubs():
+    from src.cookie_pool import CookieEntry
+
+    async def fake_acquire():
+        return CookieEntry(arena_auth="fake", cf_clearance="fake", label="test")
+
+    async def fake_recaptcha(*a, **kw):
+        return None
+
+    client_mod.acquire_cookie = fake_acquire
+    client_mod.get_recaptcha_token = fake_recaptcha
 
 
 TOOL_REPLY = [
@@ -62,6 +76,7 @@ TOOLS = [
 
 
 def main():
+    _install_stubs()
     store._convs.clear()
     client_mod.ArenaClient._stream_attempt = make_mock([TOOL_REPLY, NORMAL_REPLY])
 
@@ -129,9 +144,9 @@ def main():
         call_count = [0]
         orig = client_mod.ArenaClient._stream_attempt
 
-        async def counting(self, payload):
+        async def counting(self, payload, cookie_entry=None, proxy=None):
             call_count[0] += 1
-            async for ev in orig(self, payload):
+            async for ev in orig(self, payload, cookie_entry, proxy):
                 yield ev
 
         client_mod.ArenaClient._stream_attempt = counting

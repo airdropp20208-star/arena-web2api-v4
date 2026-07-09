@@ -21,3 +21,10 @@ data/
 .idea/
 .vscode/
 *.swp
+
+# Environment files — never commit cookies/credentials
+.env
+.env.*
+!.env.example
+# Keep .env.arena out too (auto-extracted cookies)
+.env.arena

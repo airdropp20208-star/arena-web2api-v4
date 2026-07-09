@@ -22,7 +22,7 @@ from fastapi.responses import StreamingResponse
 
 from src.attachments import normalize_attachments
 from src.client import client
-from src.concurrency import gate
+from src.concurrency import gate, conv_locks
 from src.conversation import manager
 from src.errors import ArenaWeb2APIError
 from src.idempotency import idempotency
@@ -161,32 +161,39 @@ async def chat_completions(
 
         async def gen():
             full = ""
+            # Register active stream for graceful shutdown — fix #29
+            try:
+                from main import register_stream, unregister_stream
+                await register_stream()
+            except ImportError:
+                pass  # main not loaded yet during tests
             try:
                 async with gate.slot():
-                    stream = (
-                        client.stream_battle(plan, modality=modality)
-                        if use_battle
-                        else client.stream_direct(plan, modality=modality)
-                    )
-                    first = True
-                    async for ev in stream:
-                        if ev.kind == "error" and ev.error:
-                            yield make_error_chunk(ev.error, "upstream_error")
-                            return
-                        if ev.kind == "done":
-                            break
-                        if not ev.content:
-                            continue
-                        if is_battle:
-                            which = ev.model_index or "a"
-                            label = "[A] " if which == "a" else "[B] "
-                            text = label + ev.content
-                        else:
-                            text = ev.content
-                        full += ev.content
-                        role = "assistant" if first else None
-                        first = False
-                        yield make_stream_chunk(text, req.model, cid, ts, role=role)
+                    async with conv_locks.acquire(plan.conversation.conversation_id if plan.is_continuation else None):
+                        stream = (
+                            client.stream_battle(plan, modality=modality)
+                            if use_battle
+                            else client.stream_direct(plan, modality=modality)
+                        )
+                        first = True
+                        async for ev in stream:
+                            if ev.kind == "error" and ev.error:
+                                yield make_error_chunk(ev.error, "upstream_error")
+                                return
+                            if ev.kind == "done":
+                                break
+                            if not ev.content:
+                                continue
+                            if is_battle:
+                                which = ev.model_index or "a"
+                                label = "[A] " if which == "a" else "[B] "
+                                text = label + ev.content
+                            else:
+                                text = ev.content
+                            full += ev.content
+                            role = "assistant" if first else None
+                            first = False
+                            yield make_stream_chunk(text, req.model, cid, ts, role=role)
 
                 # ── Tool call parsing (buffer xong rồi emit) ───────────────
                 parsed = parse_tool_calls(full) if (tools_active and not is_battle) else None
@@ -246,6 +253,13 @@ async def chat_completions(
                     latency_ms=(time.time() - started) * 1000,
                     error_type="internal",
                 )
+            finally:
+                # Unregister active stream — fix #29
+                try:
+                    from main import unregister_stream
+                    await unregister_stream()
+                except (ImportError, Exception):
+                    pass
 
         return StreamingResponse(
             gen(),
@@ -256,27 +270,28 @@ async def chat_completions(
     # ── Non-streaming ──────────────────────────────────────────────────────
     try:
         async with gate.slot():
-            stream = (
-                client.stream_battle(plan, modality=modality)
-                if use_battle
-                else client.stream_direct(plan, modality=modality)
-            )
-            full_a = full_b = ""
-            async for ev in stream:
-                if ev.kind == "error" and ev.error:
-                    raise ArenaWeb2APIError(ev.error, status=502)
-                if ev.kind == "done":
-                    break
-                if not ev.content:
-                    continue
-                if is_battle:
-                    which = ev.model_index or "a"
-                    if which == "a":
-                        full_a += ev.content
+            async with conv_locks.acquire(plan.conversation.conversation_id if plan.is_continuation else None):
+                stream = (
+                    client.stream_battle(plan, modality=modality)
+                    if use_battle
+                    else client.stream_direct(plan, modality=modality)
+                )
+                full_a = full_b = ""
+                async for ev in stream:
+                    if ev.kind == "error" and ev.error:
+                        raise ArenaWeb2APIError(ev.error, status=502)
+                    if ev.kind == "done":
+                        break
+                    if not ev.content:
+                        continue
+                    if is_battle:
+                        which = ev.model_index or "a"
+                        if which == "a":
+                            full_a += ev.content
+                        else:
+                            full_b += ev.content
                     else:
-                        full_b += ev.content
-                else:
-                    full_a += ev.content
+                        full_a += ev.content
     except ArenaWeb2APIError as e:
         await metrics.record(
             model=req.model,

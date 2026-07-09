@@ -75,47 +75,79 @@ class ModelRegistry:
         return count
 
     async def refresh(self) -> int:
-        """Fetch models từ Arena browser. Trả về số model."""
+        """Fetch models từ Arena browser. Retry 3 lần với backoff — fix #20."""
         import json as json_mod
 
+        max_retries = 3
+        backoff_base = 1.5
+
         async with self._lock:
-            try:
-                # Dùng agent-browser để lấy models (browser có cookies đúng)
-                proc = await asyncio.create_subprocess_exec(
-                    "agent-browser",
-                    "eval",
-                    """
-                    (async () => {
-                        const resp = await fetch('/nextjs-api/v1/models');
-                        const html = await resp.text();
-                        const match = html.match(/initialModels.*?(\\[\\{.*?\\}\\])/s);
-                        if (!match) return null;
-                        let dataStr = match[1].replace(/\\\\\\"/g, '"').replace(/\\\\"/g, '"');
-                        try {
-                            const models = JSON.parse(dataStr);
-                            return models.map(m => ({id: m.id, publicName: m.publicName, displayName: m.displayName}));
-                        } catch(e) {
-                            return null;
-                        }
-                    })()
-                    """,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
+            for attempt in range(1, max_retries + 1):
+                try:
+                    # Dùng agent-browser để lấy models (browser có cookies đúng)
+                    proc = await asyncio.create_subprocess_exec(
+                        "agent-browser",
+                        "eval",
+                        """
+                        (async () => {
+                            const resp = await fetch('/nextjs-api/v1/models');
+                            const html = await resp.text();
+                            const match = html.match(/initialModels.*?(\\[\\{.*?\\}\\])/s);
+                            if (!match) return null;
+                            let dataStr = match[1].replace(/\\\\\\"/g, '"').replace(/\\\\"/g, '"');
+                            try {
+                                const models = JSON.parse(dataStr);
+                                return models.map(m => ({id: m.id, publicName: m.publicName, displayName: m.displayName}));
+                            } catch(e) {
+                                return null;
+                            }
+                        })()
+                        """,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, _stderr = await asyncio.wait_for(proc.communicate(), timeout=20)
 
-                if proc.returncode == 0 and stdout:
-                    models_list = json_mod.loads(stdout.decode().strip())
-                    if models_list and isinstance(models_list, list):
-                        count = self._ingest(models_list)
-                        logger.info(f"Model registry: nạp {count} model từ Arena browser.")
-                        return count
+                    if proc.returncode == 0 and stdout:
+                        models_list = json_mod.loads(stdout.decode().strip())
+                        if models_list and isinstance(models_list, list):
+                            count = self._ingest(models_list)
+                            logger.info(f"Model registry: nạp {count} model từ Arena browser (attempt {attempt}).")
+                            return count
 
-                logger.warning("Model registry: browser fetch thất bại, giữ cache cũ.")
-                return len(self._name_to_id)
-            except Exception as e:
-                logger.warning(f"Model registry refresh lỗi: {e}")
-                return len(self._name_to_id)
+                    # Empty result — retry if attempts left
+                    if attempt < max_retries:
+                        wait = backoff_base * (2 ** (attempt - 1))
+                        logger.warning(
+                            f"Model registry: browser fetch thất bại (attempt {attempt}/{max_retries}), "
+                            f"retry trong {wait:.1f}s"
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                except asyncio.TimeoutError:
+                    if attempt < max_retries:
+                        wait = backoff_base * (2 ** (attempt - 1))
+                        logger.warning(
+                            f"Model registry: timeout (attempt {attempt}/{max_retries}), "
+                            f"retry trong {wait:.1f}s"
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    logger.warning(f"Model registry: timeout sau {max_retries} lần, giữ cache cũ")
+                except Exception as e:
+                    if attempt < max_retries:
+                        wait = backoff_base * (2 ** (attempt - 1))
+                        logger.warning(
+                            f"Model registry refresh lỗi (attempt {attempt}/{max_retries}): {e}, "
+                            f"retry trong {wait:.1f}s"
+                        )
+                        await asyncio.sleep(wait)
+                        continue
+                    logger.warning(f"Model registry refresh lỗi sau {max_retries} lần: {e}")
+
+            # All retries failed — keep old cache or fallback to defaults
+            logger.warning("Model registry: all retries failed, giữ cache cũ hoặc fallback DEFAULT_MODELS")
+            return len(self._name_to_id)
 
     def _stale(self) -> bool:
         return (time.time() - self._loaded_at) > MODEL_REGISTRY_TTL

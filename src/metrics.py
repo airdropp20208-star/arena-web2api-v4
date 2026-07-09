@@ -83,5 +83,46 @@ class Metrics:
             },
         }
 
+    def to_prometheus(self) -> str:
+        """Export metrics in Prometheus text format — fix #24."""
+        if not self.enabled:
+            return "# Metrics disabled (METRICS_ENABLED=false)\n"
+
+        lines = [
+            "# HELP arena_requests_total Total requests by model",
+            "# TYPE arena_requests_total counter",
+            "# HELP arena_tokens_total Total tokens by model (in/out)",
+            "# TYPE arena_tokens_total counter",
+            "# HELP arena_latency_ms_total Total latency in ms by model",
+            "# TYPE arena_latency_ms_total counter",
+            "# HELP arena_errors_total Total errors by type and model",
+            "# TYPE arena_errors_total counter",
+            "# HELP arena_uptime_seconds Server uptime",
+            "# TYPE arena_uptime_seconds gauge",
+        ]
+
+        # Uptime
+        uptime = time.time() - self.started_at
+        lines.append(f'arena_uptime_seconds {uptime:.0f}')
+
+        # Per-model metrics
+        for model, c in self._by_model.items():
+            # Escape model name for Prometheus label
+            safe_model = model.replace("\\", "\\\\").replace('"', '\\"')
+            label = f'model="{safe_model}"'
+            lines.append(f'arena_requests_total{{{label},status="success"}} {c.successes}')
+            lines.append(f'arena_requests_total{{{label},status="failure"}} {c.failures}')
+            lines.append(f'arena_requests_total{{{label},status="total"}} {c.requests}')
+            lines.append(f'arena_tokens_total{{{label},direction="in"}} {c.tokens_in}')
+            lines.append(f'arena_tokens_total{{{label},direction="out"}} {c.tokens_out}')
+            lines.append(f'arena_latency_ms_total{{{label}}} {c.latency_ms_total:.1f}')
+            # Errors by type
+            for err_type, count in c.errors.items():
+                safe_err = err_type.replace("\\", "\\\\").replace('"', '\\"')
+                err_label = f'model="{safe_model}",error_type="{safe_err}"'
+                lines.append(f'arena_errors_total{{{err_label}}} {count}')
+
+        return "\n".join(lines) + "\n"
+
 
 metrics = Metrics()

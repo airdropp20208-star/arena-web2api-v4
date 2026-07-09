@@ -209,6 +209,16 @@ async def admin_metrics(x_admin_token: str | None = Header(default=None)):
     return metrics.snapshot()
 
 
+@router.get("/metrics")
+async def prometheus_metrics():
+    """Prometheus text format — fix #24. No auth (Prometheus scrapes anonymously)."""
+    from fastapi.responses import PlainTextResponse
+    return PlainTextResponse(
+        content=metrics.to_prometheus(),
+        media_type="text/plain; version=0.0.4; charset=utf-8",
+    )
+
+
 @router.get("/admin/breaker")
 async def admin_breaker(x_admin_token: str | None = Header(default=None)):
     _check_admin(x_admin_token)
@@ -237,3 +247,158 @@ async def admin_conversations(x_admin_token: str | None = Header(default=None)):
     _check_admin(x_admin_token)
     purged = await store.cleanup()
     return {"purged": purged, "store": store.snapshot()}
+
+
+@router.get("/admin/broker")
+async def admin_broker(x_admin_token: str | None = Header(default=None)):
+    """Token broker status (extension connection + token count)."""
+    _check_admin(x_admin_token)
+    from src.token_broker import broker
+    from src.config import RECAPTCHA_SOLVER, TOKEN_BROKER_HOST, TOKEN_BROKER_PORT
+
+    return {
+        "strategy": RECAPTCHA_SOLVER,
+        "broker_host": TOKEN_BROKER_HOST,
+        "broker_port": TOKEN_BROKER_PORT,
+        **broker.snapshot(),
+    }
+
+
+@router.post("/admin/broker/test")
+async def admin_broker_test(x_admin_token: str | None = Header(default=None)):
+    """Test token request từ extension. Trả về token hoặc error."""
+    _check_admin(x_admin_token)
+    from src.token_broker import broker
+    from src.recaptcha_solver import current_strategy
+
+    if current_strategy() != "extension":
+        return {
+            "ok": False,
+            "error": f"Current strategy is '{current_strategy()}', not 'extension'. "
+            "Set RECAPTCHA_SOLVER=extension in .env to test.",
+        }
+    try:
+        import time
+        t0 = time.time()
+        token = await broker.request_token(timeout=30)
+        return {
+            "ok": True,
+            "token_length": len(token),
+            "token_preview": token[:60] + "...",
+            "elapsed_ms": int((time.time() - t0) * 1000),
+        }
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/admin/health-deep")
+async def admin_health_deep(x_admin_token: str | None = Header(default=None)):
+    """
+    Deep health check — verify Arena API constants are still valid.
+
+    Fetch arena.ai HTML, parse reCAPTCHA site key + verify endpoint URL pattern
+    matches config. Detects when Arena deploys update that breaks constants.
+
+    Returns:
+      - status: ok | warning | error
+      - checks: list of {check, ok, detail}
+    """
+    _check_admin(x_admin_token)
+    import httpx
+    from src.config import (
+        ARENA_BASE,
+        ARENA_STREAM_URL,
+        RECAPTCHA_SITE_KEY,
+        RECAPTCHA_ACTION,
+    )
+
+    checks = []
+
+    # Check 1: arena.ai reachable
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            resp = await http.get(ARENA_BASE)
+        if resp.status_code < 400:
+            html = resp.text
+            checks.append({"check": "arena.ai_reachable", "ok": True, "detail": f"HTTP {resp.status_code}, {len(html)} bytes"})
+        else:
+            checks.append({"check": "arena.ai_reachable", "ok": False, "detail": f"HTTP {resp.status_code}"})
+            html = ""
+    except Exception as e:
+        checks.append({"check": "arena.ai_reachable", "ok": False, "detail": str(e)})
+        html = ""
+
+    # Check 2: reCAPTCHA site key still in HTML
+    if html:
+        if RECAPTCHA_SITE_KEY in html:
+            checks.append({"check": "recaptcha_site_key_valid", "ok": True, "detail": f"key matches config: {RECAPTCHA_SITE_KEY[:20]}..."})
+        else:
+            # Try to extract current key
+            import re
+            keys = re.findall(r'6Le[A-Za-z0-9_-]{38,42}', html)
+            if keys:
+                checks.append({
+                    "check": "recaptcha_site_key_valid",
+                    "ok": False,
+                    "detail": f"Config key not in HTML. Found in HTML: {keys[0]}. Update RECAPTCHA_SITE_KEY.",
+                })
+            else:
+                checks.append({"check": "recaptcha_site_key_valid", "ok": False, "detail": "No site key found in HTML"})
+
+    # Check 3: create-evaluation endpoint still exists (check via OPTIONS or HEAD)
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as http:
+            # Use HEAD or OPTIONS — won't actually create evaluation
+            resp = await http.options(ARENA_STREAM_URL)
+        if resp.status_code in (200, 204, 405, 404):
+            # 405 = method not allowed but endpoint exists
+            # 404 = endpoint not found (BAD)
+            endpoint_ok = resp.status_code != 404
+            checks.append({
+                "check": "stream_endpoint_exists",
+                "ok": endpoint_ok,
+                "detail": f"OPTIONS {ARENA_STREAM_URL} → HTTP {resp.status_code}",
+            })
+        else:
+            checks.append({"check": "stream_endpoint_exists", "ok": True, "detail": f"HTTP {resp.status_code} (assumed OK)"})
+    except Exception as e:
+        checks.append({"check": "stream_endpoint_exists", "ok": False, "detail": str(e)})
+
+    # Check 4: extension connected (if using extension strategy)
+    try:
+        from src.token_broker import broker
+        from src.recaptcha_solver import current_strategy
+        if current_strategy() == "extension":
+            checks.append({
+                "check": "extension_connected",
+                "ok": broker.is_extension_connected,
+                "detail": "connected" if broker.is_extension_connected else "DISCONNECTED — open Kiwi + extension",
+            })
+    except Exception as e:
+        checks.append({"check": "extension_connected", "ok": False, "detail": str(e)})
+
+    # Check 5: cookie pool healthy
+    try:
+        pool = await get_cookie_pool()
+        checks.append({
+            "check": "cookie_pool",
+            "ok": pool.healthy_count() > 0,
+            "detail": f"{pool.healthy_count()}/{pool.size} healthy",
+        })
+    except Exception as e:
+        checks.append({"check": "cookie_pool", "ok": False, "detail": str(e)})
+
+    # Aggregate status
+    all_ok = all(c["ok"] for c in checks)
+    any_fail = any(not c["ok"] for c in checks)
+    status = "ok" if all_ok else ("error" if any_fail else "ok")
+
+    return {
+        "status": status,
+        "checks": checks,
+        "config": {
+            "recaptcha_site_key": RECAPTCHA_SITE_KEY,
+            "recaptcha_action": RECAPTCHA_ACTION,
+            "stream_url": ARENA_STREAM_URL,
+        },
+    }

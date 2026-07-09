@@ -90,7 +90,20 @@ class ConversationStore:
 
     def _cleanup_locked(self) -> None:
         before = len(self._convs)
+        # Remove expired conversations
         self._convs = {k: v for k, v in self._convs.items() if not v.is_expired(CONVERSATION_TTL)}
+        # Size cap — fix #34: avoid unbounded growth
+        # Keep most-recently-used 1000 conversations max
+        MAX_CONVERSATIONS = 1000
+        if len(self._convs) > MAX_CONVERSATIONS:
+            # Sort by last_activity desc, keep top MAX_CONVERSATIONS
+            sorted_items = sorted(
+                self._convs.items(),
+                key=lambda x: getattr(x[1], "last_activity", 0),
+                reverse=True,
+            )
+            self._convs = dict(sorted_items[:MAX_CONVERSATIONS])
+            logger.info(f"Conversation store size cap: trimmed to {MAX_CONVERSATIONS}")
         if len(self._convs) != before:
             logger.debug(f"Conversation store cleanup: {before} → {len(self._convs)}")
 
@@ -138,6 +151,30 @@ class ConversationStore:
         async with self._async_lock:
             data = [asdict(c) for c in self._convs.values()]
         try:
+            # Backup versioning — fix #25: rotate .bak → .bak.1 → .bak.2 → .bak.3
+            # Keep 4 historical versions for recovery
+            if os.path.exists(CONVERSATION_STORE_FILE):
+                # Rotate .bak.3 → delete, .bak.2 → .bak.3, .bak.1 → .bak.2, .bak → .bak.1
+                for i in [3, 2, 1]:
+                    src = f"{CONVERSATION_STORE_FILE}.bak.{i}" if i > 1 else f"{CONVERSATION_STORE_FILE}.bak"
+                    dst = f"{CONVERSATION_STORE_FILE}.bak.{i+1}"
+                    if os.path.exists(src):
+                        try:
+                            if i == 3:
+                                os.unlink(src)  # delete oldest
+                            else:
+                                os.rename(src, dst)
+                        except OSError:
+                            pass
+                # Current file → .bak
+                backup_path = CONVERSATION_STORE_FILE + ".bak"
+                try:
+                    import shutil
+                    shutil.copy2(CONVERSATION_STORE_FILE, backup_path)
+                except Exception as backup_err:
+                    logger.warning(f"Backup conversation file failed: {backup_err}")
+                    # Continue anyway — better to write new than abort
+
             # ghi vào temp file rồi rename nguyên tử (tránh file corrupt)
             dirname = os.path.dirname(os.path.abspath(CONVERSATION_STORE_FILE)) or "."
             os.makedirs(dirname, exist_ok=True)
@@ -158,19 +195,30 @@ class ConversationStore:
     async def load(self) -> None:
         if not CONVERSATION_STORE_FILE:
             return
-        try:
-            with open(CONVERSATION_STORE_FILE, encoding="utf-8") as f:
-                data = json.load(f)
-            async with self._async_lock:
-                for d in data:
-                    c = Conversation(**d)
-                    if not c.is_expired(CONVERSATION_TTL):
-                        self._convs[c.key] = c
-            logger.info(f"Loaded {len(self._convs)} conversations từ file")
-        except FileNotFoundError:
-            pass
-        except Exception as e:
-            logger.warning(f"Load conversations lỗi: {e}")
+        # Try main file first; if corrupt, try .bak, then .bak.1, .bak.2, .bak.3
+        candidates = [CONVERSATION_STORE_FILE, CONVERSATION_STORE_FILE + ".bak"]
+        for i in [1, 2, 3]:
+            candidates.append(f"{CONVERSATION_STORE_FILE}.bak.{i}")
+        for path in candidates:
+            if not os.path.exists(path):
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    data = json.load(f)
+                async with self._async_lock:
+                    for d in data:
+                        c = Conversation(**d)
+                        if not c.is_expired(CONVERSATION_TTL):
+                            self._convs[c.key] = c
+                logger.info(f"Loaded {len(self._convs)} conversations từ {path}")
+                return
+            except json.JSONDecodeError as e:
+                logger.warning(f"File {path} corrupt (JSON decode error): {e} — trying next")
+                continue
+            except Exception as e:
+                logger.warning(f"Load từ {path} lỗi: {e} — trying next")
+                continue
+        logger.info("No conversation file to load (fresh start)")
 
 
 store = ConversationStore()
