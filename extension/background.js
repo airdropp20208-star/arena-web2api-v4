@@ -21,8 +21,9 @@ const RECAPTCHA_SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const RECAPTCHA_ACTION = "chat_submit";
 const RECONNECT_DELAY_MS = 3000;
 const TOKEN_REQUEST_TIMEOUT_MS = 30000;
-const ARENA_TAB_REOPEN_DELAY_MS = 2000;
-const AUTO_OPEN_ARENA = true; // set false để tắt auto-open
+// KHÔNG auto-open arena.ai tab — user sẽ mở manual khi cần
+// (tránh che game khi extension load)
+const AUTO_OPEN_ARENA = false;
 
 // Arena credentials for auto-relogin (loaded from storage)
 let arenaEmail = "";

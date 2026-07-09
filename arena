@@ -222,6 +222,12 @@ cmd_start() {
     log "Khởi động arena-web2api..."
     log "  Dir: $ARENA_DIR"
 
+    # Pre-flight check
+    if [ ! -f .env ]; then
+        err ".env không tồn tại. Chạy: arena setup"
+        exit 1
+    fi
+
     # Acquire wakelock (Termux)
     if command -v termux-wake-lock >/dev/null 2>&1; then
         termux-wake-lock 2>/dev/null || true
@@ -233,11 +239,20 @@ cmd_start() {
     disown
     log "  keepalive.sh PID: $!"
 
-    # Wait for server to be ready
+    # Wait for SERVER only (không đợi extension)
     info "Đợi server ready..."
     for i in {1..30}; do
         if curl -s -m 2 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
             log "✓ Server ready tại http://127.0.0.1:8000"
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Để chat hoạt động, cần:"
+            echo "  1. Mở Kiwi Browser"
+            echo "  2. Extension tự kết nối (check popup: '✓ Connected')"
+            echo "  3. Tab arena.ai phải open + đã login"
+            echo ""
+            echo "Test: arena status (xem extension connected chưa)"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             cmd_status
             return 0

@@ -125,13 +125,19 @@ restart_server() {
     fi
 }
 
-# ── Check Kiwi Browser process ─────────────────────────────────────────────
+# ── Check Kiwi Browser process — KHÔNG relaunch nếu chưa chạy ─────────────
+# Logic vận hành đúng:
+#   1. User mở Kiwi + extension + login arena.ai (manual, 1 lần)
+#   2. User chạy arena start → server start
+#   3. Extension auto-connect tới server (Kiwi đang chạy)
+# Server KHÔNG proactively relaunch Kiwi vì:
+#   - Sẽ che game khi user đang chơi
+#   - Tab arena.ai cần user login, không thể auto
+# Chỉ log warning nếu Kiwi không chạy, user tự mở.
 check_kiwi() {
-    # Check via pgrep
     if pgrep -f "$KIWI_PACKAGE" >/dev/null 2>&1; then
         return 0
     fi
-    # Fallback: check via dumpsys (more reliable for system apps)
     if command -v dumpsys >/dev/null 2>&1; then
         if dumpsys activity activities 2>/dev/null | grep -q "$KIWI_PACKAGE"; then
             return 0
@@ -140,38 +146,21 @@ check_kiwi() {
     return 1
 }
 
-relaunch_kiwi() {
-    local hour=$(date +%H)
-    if [ "$hour" != "$current_hour" ]; then
-        current_hour="$hour"
-        restart_counts[kiwi]=0
+# KHÔNG tự relaunch Kiwi — chỉ log warning
+warn_kiwi_down() {
+    log "⚠ Kiwi Browser không chạy — extension sẽ không kết nối được"
+    log "  → Mở Kiwi Browser + extension + tab arena.ai (login) thủ công"
+    log "  → Server sẽ tự nhận khi extension connect"
+    # Alert 1 lần, không spam
+    if [ -z "${KIWI_WARNED:-}" ]; then
+        send_alert "⚠ Arena: Kiwi Browser không chạy — mở Kiwi + extension để server hoạt động"
+        KIWI_WARNED=1
     fi
-    restart_counts[kiwi]=$(( ${restart_counts[kiwi]:-0} + 1 ))
-    if [ "${restart_counts[kiwi]:-0}" -gt "$MAX_RESTART_PER_HOUR" ]; then
-        log "⚠ Kiwi restart limit exceeded — NOT restarting, investigate"
-        return 1
-    fi
-    log "→ Relaunching Kiwi (attempt ${restart_counts[kiwi]}/$MAX_RESTART_PER_HOUR this hour)..."
-    # Try via am start (Android Activity Manager)
-    if command -v am >/dev/null 2>&1; then
-        am start -n "$KIWI_PACKAGE/$KIWI_ACTIVITY" -a android.intent.action.VIEW -d "https://arena.ai" 2>/dev/null
-        sleep 5
-        if check_kiwi; then
-            log "✓ Kiwi relaunched OK (via am start)"
-            return 0
-        fi
-    fi
-    # Fallback: try Termux open
-    if command -v termux-open-url >/dev/null 2>&1; then
-        termux-open-url "https://arena.ai" 2>/dev/null
-        sleep 5
-        if check_kiwi; then
-            log "✓ Kiwi relaunched OK (via termux-open-url)"
-            return 0
-        fi
-    fi
-    log "✗ Cannot relaunch Kiwi — manual intervention needed"
-    return 1
+}
+
+# Reset warning khi Kiwi quay lại
+reset_kiwi_warning() {
+    KIWI_WARNED=""
 }
 
 # ── Check extension connection ─────────────────────────────────────────────
@@ -282,10 +271,11 @@ main() {
             restart_server
         fi
 
-        # 2. Kiwi check
+        # 2. Kiwi check — chỉ warn, không relaunch
         if ! check_kiwi; then
-            log "✗ Kiwi not running — relaunching"
-            relaunch_kiwi
+            warn_kiwi_down
+        else
+            reset_kiwi_warning
         fi
 
         # 3. Extension connection check
