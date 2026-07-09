@@ -145,8 +145,8 @@ RECAPTCHA_TOKEN_TTL=90
 RECAPTCHA_SOLVE_TIMEOUT=30
 RECAPTCHA_MIN_SCORE=0.7
 
-# Token broker
-TOKEN_BROKER_HOST=127.0.0.1
+# Token broker (bind 0.0.0.0 để Kiwi extension reach được)
+TOKEN_BROKER_HOST=0.0.0.0
 TOKEN_BROKER_PORT=8765
 TOKEN_BROKER_ENABLED=true
 
@@ -234,10 +234,18 @@ cmd_start() {
         log "  Wakelock: acquired"
     fi
 
-    # Start keepalive in background
-    nohup bash keepalive.sh > /tmp/keepalive.log 2>&1 &
-    disown
-    log "  keepalive.sh PID: $!"
+    # Start keepalive DETACHED hoàn toàn khỏi terminal dùng setsid
+    # setsid = tạo session mới, process không phụ thuộc terminal cha
+    # Khi user close terminal, keepalive vẫn chạy
+    if command -v setsid >/dev/null 2>&1; then
+        setsid bash keepalive.sh > /tmp/keepalive.log 2>&1 < /dev/null &
+    else
+        # Fallback: nohup
+        nohup bash keepalive.sh > /tmp/keepalive.log 2>&1 < /dev/null &
+    fi
+    disown 2>/dev/null || true
+    log "  keepalive.sh started (detached)"
+    log "  Log: /tmp/keepalive.log"
 
     # Wait for SERVER only (không đợi extension)
     info "Đợi server ready..."
@@ -246,12 +254,16 @@ cmd_start() {
             log "✓ Server ready tại http://127.0.0.1:8000"
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Server chạy DETACHED — có thể close terminal."
+            echo ""
             echo "Để chat hoạt động, cần:"
-            echo "  1. Mở Kiwi Browser"
+            echo "  1. Mở Kiwi Browser (nếu chưa mở)"
             echo "  2. Extension tự kết nối (check popup: '✓ Connected')"
             echo "  3. Tab arena.ai phải open + đã login"
             echo ""
             echo "Test: arena status (xem extension connected chưa)"
+            echo "Stop: arena stop"
+            echo "Logs: arena logs"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
             cmd_status

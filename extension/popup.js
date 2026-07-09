@@ -43,6 +43,17 @@ document.getElementById("save").addEventListener("click", () => {
   });
 });
 
+document.getElementById("reconnect").addEventListener("click", () => {
+  const btn = document.getElementById("reconnect");
+  btn.textContent = "Reconnecting...";
+  btn.disabled = true;
+  chrome.runtime.sendMessage({ type: "force_reconnect" }, (resp) => {
+    btn.textContent = "Force Reconnect";
+    btn.disabled = false;
+    setTimeout(refreshStatus, 1000);
+  });
+});
+
 document.getElementById("test").addEventListener("click", () => {
   const btn = document.getElementById("test");
   btn.textContent = "Generating...";

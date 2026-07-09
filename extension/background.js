@@ -162,21 +162,30 @@ async function autoRelogin() {
 }
 
 // ── WebSocket connection ───────────────────────────────────────────────────
+let reconnectAttempts = 0;
+let maxReconnectInterval = 30000; // cap at 30s
+
 function connect() {
   if (ws && (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING)) {
     return;
   }
+  reconnectAttempts++;
+  log("Connecting to " + wsUrl + " (attempt " + reconnectAttempts + ")...");
   try {
     ws = new WebSocket(wsUrl);
   } catch (e) {
     lastError = "WebSocket construction failed: " + e.message;
-    setTimeout(connect, RECONNECT_DELAY_MS);
+    log(lastError);
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s, 30s, ...
+    const delay = Math.min(1000 * Math.pow(2, reconnectAttempts - 1), maxReconnectInterval);
+    setTimeout(connect, delay);
     return;
   }
 
   ws.onopen = () => {
     connected = true;
     lastError = "";
+    reconnectAttempts = 0; // reset on success
     console.log("[ArenaBroker] WS connected to", wsUrl);
     // Send hello with capabilities
     ws.send(JSON.stringify({
@@ -189,16 +198,32 @@ function connect() {
     checkArenaTab();
   };
 
-  ws.onclose = () => {
+  ws.onclose = (event) => {
     connected = false;
-    console.log("[ArenaBroker] WS closed, will reconnect in", RECONNECT_DELAY_MS, "ms");
+    const reason = event.reason || "(no reason)";
+    const code = event.code;
+    lastError = `Disconnected (code=${code}, reason="${reason}")`;
+    console.log("[ArenaBroker] WS closed:", { code, reason });
     updateBadge("disconnected");
-    setTimeout(connect, RECONNECT_DELAY_MS);
+    // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s
+    const delay = Math.min(1000 * Math.pow(2, Math.max(0, reconnectAttempts - 1)), maxReconnectInterval);
+    console.log("[ArenaBroker] Reconnect in", delay, "ms");
+    setTimeout(connect, delay);
   };
 
   ws.onerror = (err) => {
-    lastError = "WebSocket error";
-    console.error("[ArenaBroker] WS error", err);
+    // ECONNREFUSED = server not running on that port
+    // Try to extract more info
+    let errMsg = "WebSocket error";
+    if (reconnectAttempts === 1) {
+      errMsg = "Cannot connect to " + wsUrl + " — server chưa chạy hoặc port sai. Chạy 'arena start' trong Termux.";
+    } else if (reconnectAttempts > 5) {
+      errMsg = "Still cannot connect after " + reconnectAttempts + " attempts. Check: (1) server running (arena status), (2) port 8765 not blocked, (3) wsUrl correct in popup.";
+    } else {
+      errMsg = "WebSocket error (attempt " + reconnectAttempts + ")";
+    }
+    lastError = errMsg;
+    console.error("[ArenaBroker]", errMsg, err);
   };
 
   ws.onmessage = async (event) => {
@@ -436,6 +461,18 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     } else {
       connect();
     }
+    sendResponse({ ok: true });
+    return true;
+  }
+  if (msg.type === "force_reconnect") {
+    // Force close + reconnect ngay lập tức
+    if (ws) {
+      try { ws.close(); } catch(e) {}
+      ws = null;
+    }
+    reconnectAttempts = 0;
+    lastError = "";
+    connect();
     sendResponse({ ok: true });
     return true;
   }

@@ -103,8 +103,10 @@ RECAPTCHA_SOLVE_TIMEOUT = _get_int("RECAPTCHA_SOLVE_TIMEOUT", "30")
 RECAPTCHA_MIN_SCORE = _get_float("RECAPTCHA_MIN_SCORE", "0.7")
 
 # ── Token broker (cho extension strategy) ─────────────────────────────────
-# WebSocket server mà extension kết nối tới. Mặc định localhost:8765.
-TOKEN_BROKER_HOST = os.getenv("TOKEN_BROKER_HOST", "127.0.0.1")
+# WebSocket server mà extension kết nối tới. Mặc định 0.0.0.0 (all interfaces)
+# để đảm bảo extension (chạy trong Kiwi Browser, sandbox riêng) reach được.
+# Nếu chỉ cần localhost, set TOKEN_BROKER_HOST=127.0.0.1.
+TOKEN_BROKER_HOST = os.getenv("TOKEN_BROKER_HOST", "0.0.0.0")
 TOKEN_BROKER_PORT = _get_int("TOKEN_BROKER_PORT", "8765")
 # Bật token broker server (chỉ tắt khi không dùng extension strategy)
 TOKEN_BROKER_ENABLED = _get_bool("TOKEN_BROKER_ENABLED", "true")
