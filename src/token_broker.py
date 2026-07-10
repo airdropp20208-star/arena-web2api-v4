@@ -241,10 +241,17 @@ class TokenBroker:
         MAX_BURST concurrent. Prevents Google rate-limit when many requests
         arrive simultaneously.
 
+        If broker not started (embedded mode off) but external broker running,
+        connect as WS client to external broker.
+
         Raises:
           RuntimeError: if no extension connected
           asyncio.TimeoutError: if extension doesn't respond in time
         """
+        # If broker not started (running externally), use WS client mode
+        if self._server is None:
+            return await self._request_via_external_broker(timeout)
+
         if not self.is_extension_connected:
             raise RuntimeError(
                 "No Kiwi Browser extension connected. "
@@ -297,6 +304,57 @@ class TokenBroker:
             async with self._token_lock:
                 self._in_flight_tokens = max(0, self._in_flight_tokens - 1)
 
+    async def _request_via_external_broker(self, timeout: float) -> str:
+        """Connect to external broker (broker-only.sh) as WS client, request token."""
+        import os
+        from src.config import TOKEN_BROKER_HOST, TOKEN_BROKER_PORT
+        import websockets
+
+        # Determine broker URL — localhost if broker on same machine
+        broker_host = "localhost" if TOKEN_BROKER_HOST == "0.0.0.0" else TOKEN_BROKER_HOST
+        broker_url = f"ws://{broker_host}:{TOKEN_BROKER_PORT}"
+
+        request_id = uuid.uuid4().hex[:12]
+        try:
+            async with websockets.connect(broker_url, open_timeout=5) as ws:
+                # Send hello
+                await ws.send(json.dumps({
+                    "type": "hello",
+                    "agent": "arena-server",
+                    "version": "internal",
+                }))
+                # Request token
+                await ws.send(json.dumps({
+                    "type": "need_token",
+                    "id": request_id,
+                    "ts": int(time.time() * 1000),
+                }))
+                logger.info(f"Token request {request_id} sent to external broker {broker_url}")
+
+                # Wait for response with timeout
+                deadline = time.time() + timeout
+                while time.time() < deadline:
+                    remaining = deadline - time.time()
+                    try:
+                        raw = await asyncio.wait_for(ws.recv(), timeout=remaining)
+                    except asyncio.TimeoutError:
+                        raise RuntimeError(f"External broker timeout after {timeout}s")
+                    msg = json.loads(raw)
+                    if msg.get("type") == "token" and msg.get("id") == request_id:
+                        if msg.get("ok"):
+                            token = msg.get("token", "")
+                            if len(token) > 100:
+                                self._token_count += 1
+                                logger.info(f"Token received from external broker (len={len(token)})")
+                                return token
+                            raise RuntimeError(f"Invalid token from external broker (len={len(token)})")
+                        raise RuntimeError(f"External broker error: {msg.get('error')}")
+                raise RuntimeError(f"External broker timeout after {timeout}s")
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError(f"Cannot connect to external broker at {broker_url}: {e}")
+
     async def request_cookies(self, timeout: float = 15.0) -> dict[str, str]:
         """
         Request fresh Arena cookies from extension.
@@ -307,6 +365,9 @@ class TokenBroker:
 
         Use this when arena-auth expires (~1-2 weeks) or when server returns 401.
         """
+        # External broker mode — not supported (would need WS client)
+        if self._server is None:
+            raise RuntimeError("request_cookies not supported in external broker mode")
         if not self.is_extension_connected:
             raise RuntimeError("No extension connected for cookie refresh")
 
@@ -342,6 +403,9 @@ class TokenBroker:
 
         Use this when arena-auth expires. Returns True if relogin successful.
         """
+        # External broker mode — not supported
+        if self._server is None:
+            raise RuntimeError("request_relogin not supported in external broker mode")
         if not self.is_extension_connected:
             raise RuntimeError("No extension connected for relogin")
 

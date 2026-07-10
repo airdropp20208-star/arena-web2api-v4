@@ -52,23 +52,38 @@ show_help() {
 arena — CLI cho arena-web2api
 
 Commands:
-  setup      Cài deps + tạo .env (interactive, không cần nano .env)
-  start      Khởi động server + keepalive (background)
-  stop       Dừng server + keepalive
-  status     Xem trạng thái server, extension, cookie pool
-  restart    Restart server (giữ keepalive)
-  logs       Xem log real-time (Ctrl-C để thoát)
-  test       Chạy test suite
-  update     Git pull + restart server
-  health     Deep health check (gọi /admin/health-deep)
-  token      Test token gen qua extension
-  cookie     Refresh cookie từ extension
-  relogin    Yêu cầu extension relogin Arena
-  uninstall  Remove symlink (giữ code)
+  setup            Cài deps + tạo .env (interactive, không cần nano .env)
+  start            Khởi động HTTP server + keepalive (background, kết nối broker)
+  stop             Dừng server + keepalive
+  status           Xem trạng thái server, broker, extension, cookie pool
+  restart          Restart server (giữ keepalive)
+  logs             Xem log real-time (Ctrl-C để thoát)
+  test             Chạy test suite
+  update           Git pull + restart server
+  health           Deep health check (gọi /admin/health-deep)
+  token            Test token gen qua extension
+  cookie           Refresh cookie từ extension
+  relogin          Yêu cầu extension relogin Arena
+  uninstall        Remove symlink (giữ code)
+
+Broker commands (chạy WS broker riêng, tách luồng):
+  broker start     Mở luồng riêng chạy WS broker (port 8765) — GIỮ NGUYÊN luồng này
+  broker stop      Dừng broker
+  broker status    Check broker đang chạy không
+
+Workflow khuyến nghị (2 luồng Termux):
+  # Luồng 1 (giữ nguyên):
+  arena broker start
+
+  # Luồng 2 (mở Termux session mới):
+  arena start
+
+  # Mở Kiwi Browser → extension auto-connect ws://localhost:8765
 
 Examples:
   arena setup
-  arena start
+  arena broker start   # luồng 1
+  arena start          # luồng 2
   arena status
   arena logs
 EOF
@@ -473,6 +488,96 @@ cmd_uninstall() {
     log "  Để cài lại: cd $ARENA_DIR && bash install.sh"
 }
 
+# ── broker start — mở luồng riêng chạy WS broker ───────────────────────────
+# KHÔNG background — chạy foreground để user giữ luồng này
+# Workflow:
+#   Luồng 1: arena broker start  (foreground, giữ nguyên)
+#   Luồng 2: arena start         (background, connect broker)
+cmd_broker_start() {
+    check_dir
+    cd "$ARENA_DIR"
+
+    if [ ! -f .env ]; then
+        err ".env không tồn tại. Chạy: arena setup"
+        exit 1
+    fi
+
+    # Check if broker already running
+    if pgrep -f "broker-only.sh" >/dev/null 2>&1; then
+        warn "Broker đã chạy. Mở session khác để chạy 'arena start'"
+        return 0
+    fi
+
+    log "═══════════════════════════════════════════════════════"
+    log "  WS Broker (port 8765) — foreground mode"
+    log "═══════════════════════════════════════════════════════"
+    log ""
+    log "Luồng này sẽ giữ nguyên để broker chạy."
+    log "Mở Termux session mới (swipe → New session) rồi chạy:"
+    log "  arena start"
+    log ""
+    log "Mở Kiwi Browser → extension auto-connect ws://localhost:8765"
+    log ""
+    log "Để dừng broker: Ctrl-C"
+    log "═══════════════════════════════════════════════════════"
+    echo ""
+
+    # Run broker-only.sh in foreground
+    exec bash broker-only.sh
+}
+
+cmd_broker_stop() {
+    log "Dừng WS broker..."
+    if pgrep -f "broker-only.sh" >/dev/null 2>&1; then
+        pkill -f "broker-only.sh"
+        log "  broker stopped"
+    else
+        warn "Broker không chạy"
+    fi
+    # Also kill any python process running broker.start
+    pkill -f "broker.start" 2>/dev/null || true
+    log "✓ Done"
+}
+
+cmd_broker_status() {
+    echo ""
+    info "WS Broker status"
+    echo ""
+
+    if pgrep -f "broker-only.sh" >/dev/null 2>&1; then
+        echo -e "  Broker process: ${GREEN}✓ running${NC}"
+    else
+        echo -e "  Broker process: ${RED}✗ not running${NC}"
+        echo -e "  → Chạy: ${YELLOW}arena broker start${NC}"
+        return
+    fi
+
+    # Check port
+    if command -v ss >/dev/null 2>&1; then
+        if ss -tlnp 2>/dev/null | grep -q ":8765"; then
+            echo -e "  Port 8765:      ${GREEN}✓ listening${NC}"
+        else
+            echo -e "  Port 8765:      ${RED}✗ not listening${NC}"
+        fi
+    elif command -v netstat >/dev/null 2>&1; then
+        if netstat -tlnp 2>/dev/null | grep -q ":8765"; then
+            echo -e "  Port 8765:      ${GREEN}✓ listening${NC}"
+        else
+            echo -e "  Port 8765:      ${RED}✗ not listening${NC}"
+        fi
+    fi
+
+    # Check if HTTP server also running (broker might be embedded)
+    if curl -s -m 2 http://127.0.0.1:8000/admin/broker 2>/dev/null | grep -q "extension_connected"; then
+        echo -e "  HTTP server:    ${GREEN}✓ running${NC} (broker also embedded)"
+    else
+        echo -e "  HTTP server:    ${RED}✗ not running${NC}"
+        echo -e "  → Mở session mới: ${YELLOW}arena start${NC}"
+    fi
+
+    echo ""
+}
+
 # ── Main ───────────────────────────────────────────────────────────────────
 case "${1:-}" in
     setup)    shift; cmd_setup "$@" ;;
@@ -488,6 +593,14 @@ case "${1:-}" in
     cookie)   cmd_cookie ;;
     relogin)  cmd_relogin ;;
     uninstall) cmd_uninstall ;;
+    broker)
+        case "${2:-}" in
+            start)  cmd_broker_start ;;
+            stop)   cmd_broker_stop ;;
+            status) cmd_broker_status ;;
+            *) err "Usage: arena broker {start|stop|status}"; exit 1 ;;
+        esac
+        ;;
     -h|--help|help|"") show_help ;;
     *)
         err "Unknown command: $1"

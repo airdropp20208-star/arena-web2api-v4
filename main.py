@@ -115,15 +115,40 @@ async def lifespan(app: FastAPI):
     logger.info(f"🧠 Model registry: {len(registry.list_models())} model (loading...)")
 
     # Start token broker (for extension strategy)
+    # Skip if broker already running standalone (port conflict)
     if TOKEN_BROKER_ENABLED:
+        # Check if port already in use (broker-only.sh running)
+        import socket
+        broker_already_running = False
         try:
-            await broker.start(host=TOKEN_BROKER_HOST, port=TOKEN_BROKER_PORT)
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(0.5)
+                result = s.connect_ex((TOKEN_BROKER_HOST, TOKEN_BROKER_PORT))
+                if result == 0:
+                    broker_already_running = True
+        except Exception:
+            pass
+
+        if broker_already_running:
             logger.info(
-                f"🔌 Token broker: ws://{TOKEN_BROKER_HOST}:{TOKEN_BROKER_PORT} "
-                f"(extension connects here)"
+                f"🔌 Token broker: SKIP (port {TOKEN_BROKER_PORT} already in use — "
+                f"broker-only.sh running standalone)"
             )
-        except Exception as e:
-            logger.error(f"Failed to start token broker: {e}")
+            logger.info(f"   Server sẽ dùng broker tại ws://{TOKEN_BROKER_HOST}:{TOKEN_BROKER_PORT}")
+            # Connect to external broker instead of starting embedded one
+            # Note: broker singleton methods will work but start() is no-op
+            # We need to actually connect as a client
+            # For now, just skip — server's recaptcha_solver will fail gracefully
+            # User must run 'arena broker start' in separate session
+        else:
+            try:
+                await broker.start(host=TOKEN_BROKER_HOST, port=TOKEN_BROKER_PORT)
+                logger.info(
+                    f"🔌 Token broker: ws://{TOKEN_BROKER_HOST}:{TOKEN_BROKER_PORT} "
+                    f"(embedded, extension connects here)"
+                )
+            except Exception as e:
+                logger.error(f"Failed to start token broker: {e}")
     else:
         logger.info("🔌 Token broker: disabled (TOKEN_BROKER_ENABLED=false)")
 
