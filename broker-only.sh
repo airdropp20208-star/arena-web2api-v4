@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # broker-only.sh — chạy WS broker trên port 8765, KHÔNG start server HTTP
 #
 # Dùng khi user muốn tách rời:

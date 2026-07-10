@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # Termux:Boot script — chạy tự động khi phone restart.
 #
 # Cài đặt:

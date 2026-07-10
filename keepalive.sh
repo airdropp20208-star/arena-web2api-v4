@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # keepalive.sh — chạy trong Termux, giám sát:
 #   1. Server arena-web2api (port 8000) — restart nếu chết
 #   2. Kiwi Browser process — relaunch nếu bị Android kill

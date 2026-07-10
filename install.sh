@@ -1,4 +1,4 @@
-#!/data/data/com.termux/files/usr/bin/bash
+#!/usr/bin/env bash
 # install.sh — cài `arena` command globally
 #
 # Chạy 1 lần:
