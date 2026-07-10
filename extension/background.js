@@ -311,9 +311,19 @@ async function extractArenaCookies() {
 // ── Token generation ───────────────────────────────────────────────────────
 async function handleTokenRequest(id) {
   console.log("[ArenaBroker] Token request", id);
+  const startTime = Date.now();
   try {
-    const token = await generateTokenInArenaTab();
+    // Timeout 15s — nếu grecaptcha không trả token, fail
+    const token = await Promise.race([
+      generateTokenInArenaTab(),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Token gen timeout (15s)")), 15000)),
+    ]);
+    if (!token) {
+      throw new Error("generateTokenInArenaTab returned empty token");
+    }
     tokenCount++;
+    console.log("[ArenaBroker] Token gen OK", id, "len=" + token.length, "in " + (Date.now()-startTime) + "ms");
+
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
         type: "token",
@@ -321,8 +331,11 @@ async function handleTokenRequest(id) {
         token: token,
         ok: true,
       }));
+      console.log("[ArenaBroker] Token sent to broker for", id);
+    } else {
+      console.warn("[ArenaBroker] WS not open, token not sent (count still incremented)");
     }
-    console.log("[ArenaBroker] Token sent for", id, "len=", token.length);
+    return token;
   } catch (e) {
     console.error("[ArenaBroker] Token gen failed:", e);
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -333,6 +346,7 @@ async function handleTokenRequest(id) {
         error: e.message || String(e),
       }));
     }
+    throw e;  // re-throw để caller catch
   }
 }
 
@@ -477,12 +491,16 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true;
   }
   if (msg.type === "test_token") {
-    handleTokenRequest("test_" + Date.now()).then(() => {
-      sendResponse({ ok: true });
+    // Fix: handleTokenRequest trả về token, không throw khi success
+    // Cần await result trước khi sendResponse
+    const testId = "test_" + Date.now();
+    handleTokenRequest(testId).then(() => {
+      // tokenCount đã tăng trong handleTokenRequest
+      sendResponse({ ok: true, tokenCount: tokenCount });
     }).catch((e) => {
-      sendResponse({ ok: false, error: e.message });
+      sendResponse({ ok: false, error: e.message || String(e) });
     });
-    return true;
+    return true;  // keep channel open for async sendResponse
   }
   if (msg.type === "test_cookies") {
     extractArenaCookies().then((cookies) => {
