@@ -182,6 +182,16 @@ class TokenBroker:
         if not msg_id:
             logger.warning(f"Token message without id: {msg}")
             return
+
+        # Fix #3: ignore test_ prefixed ids (from popup "Test Token" button)
+        # These are test requests not initiated by server — just log + ignore
+        if msg_id.startswith("test_"):
+            if msg.get("ok"):
+                logger.info(f"Test token received (id={msg_id}) — extension gen OK, not counted")
+            else:
+                logger.warning(f"Test token failed (id={msg_id}): {msg.get('error')}")
+            return
+
         fut = self._pending.pop(msg_id, None)
         if fut is None:
             logger.warning(f"Token response for unknown id: {msg_id}")

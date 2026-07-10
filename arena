@@ -243,6 +243,9 @@ cmd_start() {
         exit 1
     fi
 
+    # Fix #1: ensure scripts executable (git pull có thể mất +x bit)
+    chmod +x keepalive.sh broker-only.sh arena 2>/dev/null || true
+
     # Acquire wakelock (Termux)
     if command -v termux-wake-lock >/dev/null 2>&1; then
         termux-wake-lock 2>/dev/null || true
@@ -394,10 +397,25 @@ cmd_restart() {
 # ── logs ───────────────────────────────────────────────────────────────────
 cmd_logs() {
     check_dir
+    LOG_DIR="$HOME/.arena/logs"
     log "Log real-time (Ctrl-C để thoát)"
+    log "  Log dir: $LOG_DIR"
     echo ""
-    # Tail cả 2 log files
-    tail -F /tmp/keepalive.log /tmp/arena-server.log 2>/dev/null
+
+    # Determine which log files exist
+    local files=()
+    [ -f "$LOG_DIR/keepalive.log" ] && files+=("$LOG_DIR/keepalive.log")
+    [ -f "$LOG_DIR/arena-server.log" ] && files+=("$LOG_DIR/arena-server.log")
+    [ -f "$LOG_DIR/arena-broker.log" ] && files+=("$LOG_DIR/arena-broker.log")
+
+    if [ ${#files[@]} -eq 0 ]; then
+        warn "Không có log file. Server chưa chạy?"
+        warn "Chạy: arena start"
+        return
+    fi
+
+    # Tail all available log files
+    tail -F "${files[@]}" 2>/dev/null
 }
 
 # ── test ───────────────────────────────────────────────────────────────────
@@ -501,6 +519,9 @@ cmd_broker_start() {
         err ".env không tồn tại. Chạy: arena setup"
         exit 1
     fi
+
+    # Fix #1: ensure scripts executable
+    chmod +x broker-only.sh keepalive.sh arena 2>/dev/null || true
 
     # Check if broker already running
     if pgrep -f "broker-only.sh" >/dev/null 2>&1; then

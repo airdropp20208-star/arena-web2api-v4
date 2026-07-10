@@ -11,11 +11,16 @@
 set -u
 
 SERVER_DIR="$(cd "$(dirname "$0")" && pwd)"
-LOG_FILE="${LOG_FILE:-/tmp/keepalive.log}"
-SERVER_LOG="${SERVER_LOG:-/tmp/arena-server.log}"
+
+# Fix #2: use $HOME/.arena/logs instead of /tmp (Termux /tmp permission issues)
+LOG_DIR="$HOME/.arena/logs"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+LOG_FILE="${LOG_FILE:-$LOG_DIR/keepalive.log}"
+SERVER_LOG="${SERVER_LOG:-$LOG_DIR/arena-server.log}"
 CHECK_INTERVAL="${CHECK_INTERVAL:-30}"  # seconds
+MAX_BACKOFF=60
 MAX_RESTART_PER_HOUR=10
-KILL_THRESHOLD="${KILL_THRESHOLD:-3}"  # if CPU > this % for 60s, restart
+backoff=5
 
 # Kiwi package name (Kiwi Browser từ Play Store / APK)
 # Kiểm tra: pm list packages | grep -i kiwi

@@ -15,7 +15,10 @@ set -u
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-LOG_FILE="${LOG_FILE:-/tmp/arena-broker.log}"
+# Fix #2: use $HOME/.arena/logs instead of /tmp (Termux /tmp permission issues)
+LOG_DIR="$HOME/.arena/logs"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+LOG_FILE="${LOG_FILE:-$LOG_DIR/arena-broker.log}"
 
 # Colors
 GREEN='\033[0;32m'
@@ -48,6 +51,7 @@ log "Press Ctrl-C to stop. Server HTTP chạy ở session khác: 'arena start'"
 log ""
 
 # Run broker in foreground (this session)
+# Note: don't use tee if /tmp not writable — log dir already created
 exec python3 -c "
 import asyncio
 import sys
@@ -74,4 +78,4 @@ async def main():
         await broker.stop()
 
 asyncio.run(main())
-" 2>&1 | tee -a "$LOG_FILE"
+"
