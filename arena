@@ -246,6 +246,12 @@ cmd_start() {
     # Fix #1: ensure scripts executable (git pull có thể mất +x bit)
     chmod +x keepalive.sh broker-only.sh arena 2>/dev/null || true
 
+    # Fix log dir — use $HOME/.arena/logs (Termux /tmp permission issues)
+    LOG_DIR="$HOME/.arena/logs"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    KEEPALIVE_LOG="$LOG_DIR/keepalive.log"
+    SERVER_LOG_PATH="$LOG_DIR/arena-server.log"
+
     # Acquire wakelock (Termux)
     if command -v termux-wake-lock >/dev/null 2>&1; then
         termux-wake-lock 2>/dev/null || true
@@ -256,14 +262,14 @@ cmd_start() {
     # setsid = tạo session mới, process không phụ thuộc terminal cha
     # Khi user close terminal, keepalive vẫn chạy
     if command -v setsid >/dev/null 2>&1; then
-        setsid bash keepalive.sh > /tmp/keepalive.log 2>&1 < /dev/null &
+        setsid bash keepalive.sh > "$KEEPALIVE_LOG" 2>&1 < /dev/null &
     else
         # Fallback: nohup
-        nohup bash keepalive.sh > /tmp/keepalive.log 2>&1 < /dev/null &
+        nohup bash keepalive.sh > "$KEEPALIVE_LOG" 2>&1 < /dev/null &
     fi
     disown 2>/dev/null || true
     log "  keepalive.sh started (detached)"
-    log "  Log: /tmp/keepalive.log"
+    log "  Log: $KEEPALIVE_LOG"
 
     # Wait for SERVER only (không đợi extension)
     info "Đợi server ready..."
@@ -293,7 +299,7 @@ cmd_start() {
     echo ""
     err "Server không ready sau 30s. Check log:"
     err "  arena logs"
-    err "  tail -50 /tmp/keepalive.log"
+    err "  tail -50 $HOME/.arena/logs/keepalive.log"
     exit 1
 }
 
@@ -384,7 +390,9 @@ cmd_restart() {
     pkill -f "python3 main.py" 2>/dev/null
     sleep 2
     cd "$ARENA_DIR"
-    nohup python3 main.py >> /tmp/arena-server.log 2>&1 &
+    LOG_DIR="$HOME/.arena/logs"
+    mkdir -p "$LOG_DIR" 2>/dev/null || true
+    nohup python3 main.py >> "$LOG_DIR/arena-server.log" 2>&1 &
     disown
     sleep 3
     if curl -s -m 3 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
