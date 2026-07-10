@@ -15,7 +15,7 @@
  *   - Cookie refresh on demand (server request → extension extract → send back)
  */
 
-const DEFAULT_WS_URL = "ws://localhost:8765";
+const DEFAULT_WS_URL = "ws://127.0.0.1:8765";
 const ARENA_URL = "https://arena.ai";
 const RECAPTCHA_SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const RECAPTCHA_ACTION = "chat_submit";

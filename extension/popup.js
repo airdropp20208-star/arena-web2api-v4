@@ -11,7 +11,7 @@ function refreshStatus() {
       statusEl.className = "status disconnected";
       statusEl.textContent = "✗ Disconnected" + (resp.lastError ? " — " + resp.lastError : "");
     }
-    document.getElementById("wsUrl").value = resp.wsUrl || "ws://localhost:8765";
+    document.getElementById("wsUrl").value = resp.wsUrl || "ws://127.0.0.1:8765";
     document.getElementById("tokenCount").textContent = resp.tokenCount || 0;
     document.getElementById("cookieCount").textContent = resp.cookieRefreshCount || 0;
     document.getElementById("error").textContent = resp.lastError || "";
