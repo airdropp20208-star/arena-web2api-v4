@@ -351,24 +351,20 @@ cmd_status() {
         echo -e "  keepalive.sh:  ${RED}✗ not running${NC}"
     fi
 
-    # Kiwi
-    if pgrep -f "kiwibrowser\|com.kiwibrowser" >/dev/null 2>&1; then
-        echo -e "  Kiwi Browser:  ${GREEN}✓ running${NC}"
-    else
-        echo -e "  Kiwi Browser:  ${RED}✗ not running${NC} (cần cho extension)"
-    fi
-
-    # Extension + cookie pool (gọi API nếu server up)
+    # Kiwi — Termux không thể thấy process app khác (Android sandbox)
+    # Chỉ check extension connection thay vì pgrep Kiwi
     if curl -s -m 3 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
-        echo ""
         broker_status=$(curl -s -m 3 http://127.0.0.1:8000/admin/broker 2>/dev/null)
         if [ -n "$broker_status" ]; then
             ext_connected=$(echo "$broker_status" | python3 -c "import json,sys; print(json.load(sys.stdin).get('extension_connected', False))" 2>/dev/null)
             token_count=$(echo "$broker_status" | python3 -c "import json,sys; print(json.load(sys.stdin).get('token_count', 0))" 2>/dev/null)
+            cached=$(echo "$broker_status" | python3 -c "import json,sys; print(json.load(sys.stdin).get('cached_token', False))" 2>/dev/null)
             if [ "$ext_connected" = "True" ]; then
-                echo -e "  Extension:     ${GREEN}✓ connected${NC} (tokens gen: $token_count)"
+                cache_str=""
+                [ "$cached" = "True" ] && cache_str=" (cached: ✓)"
+                echo -e "  Extension:     ${GREEN}✓ connected${NC} (tokens: $token_count$cache_str)"
             else
-                echo -e "  Extension:     ${RED}✗ disconnected${NC} (mở Kiwi + extension)"
+                echo -e "  Extension:     ${RED}✗ disconnected${NC} — mở Kiwi + click icon extension"
             fi
         fi
 
