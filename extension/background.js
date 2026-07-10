@@ -19,6 +19,7 @@ const ARENA_URL = "https://arena.ai";
 // Server cache token, dùng ngay khi chat request → realtime
 const PRETOKEN_INTERVAL_MS = 80000;
 const TOKEN_TTL_MS = 110000; // 110s (token valid ~120s)
+const COOKIE_INTERVAL_MS = 300000; // 5 min — auto-submit cookies
 
 let connected = false;
 let lastError = "";
@@ -26,6 +27,7 @@ let tokenCount = 0;
 let cookieRefreshCount = 0;
 let pollTimer = null;
 let preTokenTimer = null;
+let cookieTimer = null;
 let isGenerating = false;
 let lastPreTokenAt = 0;
 
@@ -36,6 +38,7 @@ chrome.storage.local.get(["serverUrl"], (result) => {
     }
     startPolling();
     startPreToken();
+    startCookieSubmit();
 });
 
 // ── Alarm để giữ background alive ──────────────────────────────────────────
@@ -44,6 +47,7 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === "keepalive") {
         if (!pollTimer) startPolling();
         if (!preTokenTimer) startPreToken();
+        if (!cookieTimer) startCookieSubmit();
     }
 });
 
@@ -103,6 +107,36 @@ async function genAndSubmitPreToken() {
     } catch (e) {
         console.log("[ArenaBroker] Pre-token gen failed (will retry):", e.message);
         // Không fatal — sẽ retry lần sau
+    }
+}
+
+// ── Auto-cookie: extract + POST mỗi 5min ──────────────────────────────────
+// Server tự update cookie pool — user không cần paste .env
+function startCookieSubmit() {
+    if (cookieTimer) return;
+    console.log("[ArenaBroker] Starting auto-cookie submit every", COOKIE_INTERVAL_MS / 1000, "s");
+    // Submit ngay sau 5s (sau khi tab load)
+    setTimeout(submitCookies, 5000);
+    cookieTimer = setInterval(submitCookies, COOKIE_INTERVAL_MS);
+}
+
+async function submitCookies() {
+    try {
+        const cookies = await extractArenaCookies();
+        if (!cookies || !cookies["arena-auth-prod-v1.0"]) return;
+
+        const resp = await fetch(`${SERVER_URL}/admin/cookies/submit`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ cookies: cookies }),
+        });
+
+        if (resp.ok) {
+            cookieRefreshCount++;
+            console.log("[ArenaBroker] Auto-cookie submitted ✓ (keys:", Object.keys(cookies).length + ")");
+        }
+    } catch (e) {
+        console.log("[ArenaBroker] Auto-cookie failed (will retry):", e.message);
     }
 }
 

@@ -54,6 +54,10 @@ class HttpTokenBridge:
         self._cached_token: str | None = None
         self._cached_token_at: float = 0.0
         self._pre_token_ttl: float = 110.0  # 110s
+        # Auto-cookie cache
+        self._cached_cookies: dict | None = None
+        self._cached_cookies_at: float = 0.0
+        self._cookie_ttl: float = 3600.0  # 1h — refresh mỗi 5min từ extension
 
     @property
     def is_extension_connected(self) -> bool:
@@ -141,6 +145,53 @@ class HttpTokenBridge:
                 if not self._future.done():
                     self._future.set_exception(RuntimeError(f"Extension error: {err}"))
                 return {"ok": False, "error": err}
+
+    async def submit_cookies(self, cookies: dict) -> dict:
+        """Extension POST cookies (auto-extract từ arena.ai)."""
+        self._extension_last_seen = time.time()
+        if not cookies or "arena-auth-prod-v1.0" not in cookies:
+            return {"ok": False, "error": "Missing arena-auth-prod-v1.0"}
+
+        async with self._lock:
+            self._cached_cookies = cookies
+            self._cached_cookies_at = time.time()
+            logger.info(f"Cookies auto-submitted by extension (keys={list(cookies.keys())})")
+
+        # Update cookie pool
+        try:
+            from src.cookie_pool import get_cookie_pool, CookieEntry
+            import json as _json
+            pool = await get_cookie_pool()
+
+            chunks = {}
+            for k, v in cookies.items():
+                if k.startswith("arena-auth-prod-v1."):
+                    chunk_idx = k.split(".")[-1]
+                    chunks[chunk_idx] = v
+            cf = cookies.get("cf_clearance", "")
+
+            if chunks:
+                arena_auth_json = _json.dumps(chunks)
+                async with pool._lock:
+                    default_entry = next((e for e in pool._entries if e.label == "default"), None)
+                    if default_entry:
+                        default_entry.arena_auth = arena_auth_json
+                        default_entry.cf_clearance = cf
+                        default_entry.healthy = True
+                        default_entry.fail_count = 0
+                        default_entry.last_validated = time.time()
+                    else:
+                        pool._entries.append(CookieEntry(arena_auth=arena_auth_json, cf_clearance=cf, label="default"))
+                logger.info("Cookie pool updated from extension auto-submit")
+        except Exception as e:
+            logger.error(f"Cookie pool update failed: {e}")
+
+        return {"ok": True}
+
+    def get_cached_cookies(self) -> dict | None:
+        if self._cached_cookies and (time.time() - self._cached_cookies_at) < self._cookie_ttl:
+            return self._cached_cookies
+        return None
 
     def snapshot(self) -> dict:
         return {

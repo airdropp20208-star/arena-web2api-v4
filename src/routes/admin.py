@@ -263,6 +263,14 @@ async def admin_broker(x_admin_token: str | None = Header(default=None)):
     }
 
 
+@router.post("/admin/cookies/submit")
+async def admin_submit_cookies(request: dict):
+    """Extension auto-submit cookies — KHÔNG cần auth."""
+    from src.token_bridge import bridge
+    cookies = request.get("cookies", {})
+    return await bridge.submit_cookies(cookies)
+
+
 @router.get("/admin/poll")
 async def admin_poll():
     """
