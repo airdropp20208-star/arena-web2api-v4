@@ -5,7 +5,7 @@
 #   3. Tab arena.ai còn sống (qua /admin/broker) — báo nếu disconnect
 #
 # Chạy ngầm hoàn toàn: phone có thể tắt màn hình, chơi game, v.v.
-# Setup: nohup bash keepalive.sh > /tmp/keepalive.log 2>&1 &
+# Setup: arena start (auto background, log tới $HOME/.arena/logs/)
 # Stop: pkill -f keepalive.sh
 
 set -u
