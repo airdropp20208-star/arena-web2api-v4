@@ -255,99 +255,12 @@ class CookiePool:
 
     async def refresh_from_extension(self, *, force: bool = False) -> bool:
         """
-        Auto-refresh cookie from Kiwi Browser extension (if connected).
-
-        Returns True if refreshed successfully (or recently refreshed within dedup window).
-        Use when arena-auth expires — server requests fresh cookies via broker,
-        updates the default entry in pool.
-
-        Dedup: nếu đã refresh trong 30s qua, không refresh lại (tránh race khi
-        nhiều request fail auth cùng lúc). force=True để bỏ dedup.
+        Cookie refresh hiện không khả dụng trong HTTP polling mode.
+        User cần login lại arena.ai thủ công khi cookie hết hạn.
         """
-        # Dedup lock — chỉ 1 refresh trong 30s
-        now = time.time()
-        async with self._refresh_lock:
-            if not force and self._last_refresh_at > 0 and (now - self._last_refresh_at) < 30:
-                logger.debug(
-                    f"Cookie refresh skipped — recent refresh {now-self._last_refresh_at:.1f}s ago"
-                )
-                return self._last_refresh_ok
-
-            # Check if refresh already in progress
-            if self._refresh_in_progress:
-                logger.debug("Cookie refresh already in progress, waiting...")
-                # Wait for in-progress refresh to complete (max 30s)
-                for _ in range(60):
-                    if not self._refresh_in_progress:
-                        return self._last_refresh_ok
-                    await asyncio.sleep(0.5)
-                logger.warning("Cookie refresh wait timed out")
-                return self._last_refresh_ok
-
-            self._refresh_in_progress = True
-
-        try:
-            from src.token_broker import broker
-            from src.config import RECAPTCHA_SOLVER
-
-            if RECAPTCHA_SOLVER != "extension" or not broker.is_extension_connected:
-                self._last_refresh_at = now
-                self._last_refresh_ok = False
-                return False
-
-            logger.info("Requesting fresh cookies from extension...")
-            cookies = await broker.request_cookies(timeout=15.0)
-
-            # Build new arena_auth string in JSON chunked format
-            import json as _json
-            chunks = {}
-            for k, v in cookies.items():
-                if k.startswith("arena-auth-prod-v1."):
-                    chunk_idx = k.split(".")[-1]
-                    chunks[chunk_idx] = v
-            cf = cookies.get("cf_clearance", "")
-
-            if not chunks or not cf:
-                logger.error(f"Missing required cookies from extension: chunks={bool(chunks)}, cf={bool(cf)}")
-                self._last_refresh_at = now
-                self._last_refresh_ok = False
-                return False
-
-            arena_auth_json = _json.dumps(chunks)
-            cf_clearance = cf
-
-            # Update the default cookie entry (or create new one)
-            async with self._lock:
-                default_entry = next(
-                    (e for e in self._entries if e.label == "default"),
-                    None,
-                )
-                if default_entry:
-                    default_entry.arena_auth = arena_auth_json
-                    default_entry.cf_clearance = cf_clearance
-                    default_entry.healthy = True
-                    default_entry.fail_count = 0
-                    default_entry.last_validated = time.time()
-                    logger.info(f"Cookie '{default_entry.label}' refreshed from extension")
-                else:
-                    new_entry = CookieEntry(
-                        arena_auth=arena_auth_json,
-                        cf_clearance=cf_clearance,
-                        label="default",
-                    )
-                    self._entries.append(new_entry)
-                    logger.info("Added new 'default' cookie entry from extension")
-
-            self._last_refresh_at = now
-            self._last_refresh_ok = True
-            return True
-        except Exception as e:
-            logger.error(f"Cookie refresh from extension failed: {e}")
-            self._last_refresh_at = now
-            self._last_refresh_ok = False
-            return False
-        finally:
-            self._refresh_in_progress = False
+        logger.warning("Cookie refresh từ extension không khả dụng trong HTTP polling mode")
+        logger.warning("Login lại arena.ai trên Kiwi khi cookie hết hạn")
+        return False
 
     def snapshot(self) -> list[dict]:
         return [

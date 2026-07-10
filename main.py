@@ -26,9 +26,6 @@ from src.config import (
     LOG_LEVEL,
     PORT,
     RECAPTCHA_SOLVER,
-    TOKEN_BROKER_ENABLED,
-    TOKEN_BROKER_HOST,
-    TOKEN_BROKER_PORT,
 )
 from src.conversation_store import store
 from src.cookie_pool import get_cookie_pool
@@ -40,7 +37,6 @@ from src.routes.admin import router as admin_router
 from src.routes.battle import router as battle_router
 from src.routes.chat import router as chat_router
 from src.routes.models import router as models_router
-from src.token_broker import broker
 
 logger = setup_logger("main")
 
@@ -114,50 +110,15 @@ async def lifespan(app: FastAPI):
     await registry.start_refresh_loop()
     logger.info(f"🧠 Model registry: {len(registry.list_models())} model (loading...)")
 
-    # Start token broker (for extension strategy)
-    # Skip if broker already running standalone (port conflict)
-    if TOKEN_BROKER_ENABLED:
-        # Check if port already in use (broker-only.sh running)
-        import socket
-        broker_already_running = False
-        try:
-            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                s.settimeout(0.5)
-                result = s.connect_ex((TOKEN_BROKER_HOST, TOKEN_BROKER_PORT))
-                if result == 0:
-                    broker_already_running = True
-        except Exception:
-            pass
-
-        if broker_already_running:
-            logger.info(
-                f"🔌 Token broker: SKIP (port {TOKEN_BROKER_PORT} already in use — "
-                f"broker-only.sh running standalone)"
-            )
-            logger.info(f"   Server sẽ dùng broker tại ws://{TOKEN_BROKER_HOST}:{TOKEN_BROKER_PORT}")
-            # Connect to external broker instead of starting embedded one
-            # Note: broker singleton methods will work but start() is no-op
-            # We need to actually connect as a client
-            # For now, just skip — server's recaptcha_solver will fail gracefully
-            # User must run 'arena broker start' in separate session
-        else:
-            try:
-                await broker.start(host=TOKEN_BROKER_HOST, port=TOKEN_BROKER_PORT)
-                logger.info(
-                    f"🔌 Token broker: ws://{TOKEN_BROKER_HOST}:{TOKEN_BROKER_PORT} "
-                    f"(embedded, extension connects here)"
-                )
-            except Exception as e:
-                logger.error(f"Failed to start token broker: {e}")
-    else:
-        logger.info("🔌 Token broker: disabled (TOKEN_BROKER_ENABLED=false)")
+    # Token broker — HTTP polling mode, không cần WS broker
+    # Extension poll /admin/poll, submit token qua /admin/token
+    # Không cần start WS server nữa
+    logger.info(f"🔌 Token bridge: HTTP polling mode (extension poll /admin/poll)")
 
     logger.info("=" * 56)
     yield
     # ── shutdown ──────────────────────────────────────────────────────────
     logger.info("🛑 Đang tắt...")
-    if TOKEN_BROKER_ENABLED:
-        await broker.stop()
     await registry.stop()
     pool2 = await get_cookie_pool()
     await pool2.stop()

@@ -308,25 +308,19 @@ async def _solve_via_browser() -> str | None:
             return None
 
 
-# ── Extension (Kiwi Browser) solver ────────────────────────────────────────
+# ── Extension (Kiwi Browser) solver — HTTP polling, không WebSocket ─────────
 async def _solve_via_extension() -> str | None:
     """
-    Request token từ Kiwi Browser extension qua WebSocket.
+    Request token từ extension qua HTTP polling.
 
-    Extension gen token trong arena.ai tab (real Chrome fingerprint, real
-    Android UA, real sensors) → Google reCAPTCHA score cao → Arena accept.
-
-    Yêu cầu:
-      - Kiwi Browser cài extension (xem extension/README.md)
-      - arena.ai mở trong tab, đã login
-      - Extension connected tới broker (ws://localhost:8765)
-
-    Token single-use: mỗi request cần 1 token mới (no cache).
+    Extension (Kiwi) poll GET /admin/poll mỗi 2s.
+    Server trả token request → extension gen → POST /admin/token.
+    Không cần WebSocket → không bị disconnect khi Android kill background.
     """
-    from src.token_broker import broker
+    from src.token_bridge import bridge
 
     try:
-        token = await broker.request_token(timeout=RECAPTCHA_SOLVE_TIMEOUT)
+        token = await bridge.request_token(timeout=RECAPTCHA_SOLVE_TIMEOUT)
         return token
     except Exception as e:
         logger.error(f"Extension token request failed: {e}")

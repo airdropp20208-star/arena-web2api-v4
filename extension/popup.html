@@ -20,64 +20,37 @@
     .hint { font-size: 11px; color: #777; margin-top: 8px; line-height: 1.4; }
     .error { color: #f66; font-size: 11px; margin-top: 4px; word-break: break-word; }
     .success { color: #4a9; font-size: 11px; margin-top: 4px; word-break: break-word; }
-    hr { border: 0; border-top: 1px solid #333; margin: 12px 0; }
-    details summary { cursor: pointer; font-size: 12px; color: #888; padding: 4px 0; }
-    details[open] summary { color: #eee; }
   </style>
 </head>
 <body>
-  <h2>Arena Token Broker</h2>
+  <h2>Arena Token Broker (HTTP)</h2>
 
   <div id="status" class="status disconnected">checking...</div>
 
   <div class="row">
-    <label>WebSocket URL</label>
-    <input id="wsUrl" type="text" placeholder="ws://127.0.0.1:8765">
+    <label>Server URL</label>
+    <input id="serverUrl" type="text" placeholder="http://127.0.0.1:8000">
   </div>
 
   <div class="row">
-    <button id="save">Save & Reconnect</button>
+    <button id="save">Save</button>
     <button id="reconnect" class="secondary">Force Reconnect</button>
   </div>
   <div class="row">
-    <button id="test" class="secondary">Test Token</button>
     <button id="testCookies" class="secondary">Test Cookies</button>
   </div>
 
   <div class="stat">Tokens generated: <strong id="tokenCount">0</strong></div>
-  <div class="stat">Cookie refreshes: <strong id="cookieCount">0</strong></div>
+  <div class="stat">Server: <strong id="serverStatus">?</strong></div>
   <div class="stat">Arena tab: <strong id="arenaTab">?</strong></div>
   <div class="error" id="error"></div>
 
-  <details>
-    <summary>Arena credentials (for auto-relogin)</summary>
-    <div class="row" style="margin-top:8px">
-      <label>Email</label>
-      <input id="arenaEmail" type="email" placeholder="you@example.com">
-    </div>
-    <div class="row">
-      <label>Password</label>
-      <input id="arenaPassword" type="password" placeholder="(stored locally only)">
-    </div>
-    <div class="row">
-      <button id="saveCreds" class="secondary">Save Credentials</button>
-      <button id="reloginNow" class="secondary">Relogin Now</button>
-    </div>
-    <div class="hint">
-      Saved locally on device. Used to auto-relogin when arena-auth cookie expires
-      (~1-2 weeks). Without this, you must manually login on arena.ai tab.
-    </div>
-  </details>
-
-  <hr>
-
   <div class="hint">
     <strong>Setup:</strong><br>
-    1. Start server: <code>bash run.sh</code> in Termux.<br>
-    2. Open <code>https://arena.ai</code> in Kiwi (or extension auto-opens).<br>
-    3. Login once on arena.ai.<br>
-    4. (Optional) Save credentials for auto-relogin.<br>
-    5. Badge "ON" = OK. Test Token/ Cookies to verify.
+    1. Termux: <code>arena start</code><br>
+    2. Mở tab <code>arena.ai</code> trong Kiwi, login<br>
+    3. Badge "ON" = connected to server<br>
+    4. Chat sẽ tự động request token qua HTTP polling
   </div>
 
   <script src="popup.js"></script>

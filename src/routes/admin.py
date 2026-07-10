@@ -251,40 +251,62 @@ async def admin_conversations(x_admin_token: str | None = Header(default=None)):
 
 @router.get("/admin/broker")
 async def admin_broker(x_admin_token: str | None = Header(default=None)):
-    """Token broker status (extension connection + token count)."""
+    """Token bridge status (HTTP polling — thay thế WebSocket broker)."""
     _check_admin(x_admin_token)
-    from src.token_broker import broker
-    from src.config import RECAPTCHA_SOLVER, TOKEN_BROKER_HOST, TOKEN_BROKER_PORT
+    from src.token_bridge import bridge
+    from src.config import RECAPTCHA_SOLVER
 
     return {
         "strategy": RECAPTCHA_SOLVER,
-        "broker_host": TOKEN_BROKER_HOST,
-        "broker_port": TOKEN_BROKER_PORT,
-        **broker.snapshot(),
+        "transport": "http_poll",
+        **bridge.snapshot(),
     }
+
+
+@router.get("/admin/poll")
+async def admin_poll():
+    """
+    Extension poll endpoint — KHÔNG cần auth.
+    Extension gọi GET này mỗi 2s để check server cần token không.
+    """
+    from src.token_bridge import bridge
+    return await bridge.get_poll_response()
+
+
+@router.post("/admin/token")
+async def admin_submit_token(request: dict):
+    """
+    Extension submit token — KHÔNG cần auth.
+    Extension gen token xong, POST về đây.
+    Body: {"id": "...", "token": "...", "ok": true}
+    """
+    from src.token_bridge import bridge
+    request_id = request.get("id", "")
+    token = request.get("token")
+    ok = request.get("ok", False)
+    error = request.get("error")
+    return await bridge.submit_token(request_id, token, ok, error)
 
 
 @router.post("/admin/broker/test")
 async def admin_broker_test(x_admin_token: str | None = Header(default=None)):
-    """Test token request từ extension. Trả về token hoặc error."""
+    """Test token request từ extension."""
     _check_admin(x_admin_token)
-    from src.token_broker import broker
+    from src.token_bridge import bridge
     from src.recaptcha_solver import current_strategy
 
     if current_strategy() != "extension":
         return {
             "ok": False,
-            "error": f"Current strategy is '{current_strategy()}', not 'extension'. "
-            "Set RECAPTCHA_SOLVER=extension in .env to test.",
+            "error": f"Current strategy is '{current_strategy()}', not 'extension'.",
         }
     try:
         import time
         t0 = time.time()
-        token = await broker.request_token(timeout=30)
+        token = await bridge.request_token(timeout=30)
         return {
             "ok": True,
             "token_length": len(token),
-            "token_preview": token[:60] + "...",
             "elapsed_ms": int((time.time() - t0) * 1000),
         }
     except Exception as e:
