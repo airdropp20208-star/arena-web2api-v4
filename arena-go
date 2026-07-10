@@ -86,15 +86,20 @@ else
     log "Server đang chạy."
 fi
 
-# ── Bước 5: Mở Kiwi Browser (nếu chưa mở) ──────────────────────────────────
-# Termux không thể check app khác đang chạy, cứ mở (sẽ focus nếu đang chạy)
+# ── Bước 5: Mở Kiwi Browser — 2 tab ─────────────────────────────────────────
 if command -v am >/dev/null 2>&1; then
-    info "Mở Kiwi Browser..."
-    # Mở arena.ai trực tiếp
+    info "Mở Kiwi Browser — Tab 1: arena.ai..."
     am start -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
         -a android.intent.action.VIEW \
         -d "https://arena.ai" 2>/dev/null || \
     am start -a android.intent.action.VIEW -d "https://arena.ai" 2>/dev/null || true
+
+    sleep 2
+    info "Mở Tab 2: Chat UI..."
+    am start -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
+        -a android.intent.action.VIEW \
+        -d "http://127.0.0.1:8000/web-ui" 2>/dev/null || \
+    am start -a android.intent.action.VIEW -d "http://127.0.0.1:8000/web-ui" 2>/dev/null || true
 fi
 
 # ── Bước 6: Status ─────────────────────────────────────────────────────────

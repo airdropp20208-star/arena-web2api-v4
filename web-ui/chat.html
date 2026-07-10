@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Arena Chat</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, system-ui, sans-serif; background: #0d1117; color: #c9d1d9; height: 100vh; display: flex; flex-direction: column; }
+    .header { background: #161b22; padding: 12px 16px; border-bottom: 1px solid #30363d; display: flex; justify-content: space-between; align-items: center; }
+    .header h1 { font-size: 16px; color: #58a6ff; }
+    .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+    .status-dot.ok { background: #3fb950; }
+    .status-dot.err { background: #f85149; }
+    .status-text { font-size: 12px; color: #8b949e; }
+    .controls { background: #161b22; padding: 8px 16px; border-bottom: 1px solid #30363d; display: flex; gap: 8px; }
+    .controls select, .controls button { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+    .controls select { flex: 1; }
+    .controls button { cursor: pointer; white-space: nowrap; }
+    .controls button:active { background: #30363d; }
+    .controls button.stream-btn { background: #1f6feb; color: #fff; border-color: #1f6feb; }
+    .messages { flex: 1; overflow-y: auto; padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+    .msg { max-width: 90%; padding: 10px 14px; border-radius: 12px; font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+    .msg.user { align-self: flex-end; background: #1f6feb; color: #fff; }
+    .msg.assistant { align-self: flex-start; background: #21262d; border: 1px solid #30363d; }
+    .msg.error { align-self: center; background: #f8514922; border: 1px solid #f85149; color: #f85149; font-size: 13px; }
+    .msg.system { align-self: center; background: #30363d; color: #8b949e; font-size: 12px; }
+    .msg.battle { max-width: 95%; }
+    .msg.battle .label { font-size: 11px; color: #8b949e; margin-bottom: 4px; font-weight: bold; }
+    .input-area { background: #161b22; padding: 12px 16px; border-top: 1px solid #30363d; display: flex; gap: 8px; }
+    .input-area textarea { flex: 1; background: #0d1117; color: #c9d1d9; border: 1px solid #30363d; border-radius: 8px; padding: 10px 14px; font-size: 14px; resize: none; height: 44px; max-height: 120px; font-family: inherit; }
+    .input-area button { background: #238636; color: #fff; border: 0; border-radius: 8px; padding: 0 20px; font-size: 14px; font-weight: 600; cursor: pointer; white-space: nowrap; }
+    .input-area button:active { background: #1a7f37; }
+    .input-area button:disabled { background: #21262d; color: #484f58; cursor: not-allowed; }
+    .typing { display: none; align-self: flex-start; padding: 10px 14px; background: #21262d; border: 1px solid #30363d; border-radius: 12px; font-size: 13px; color: #8b949e; }
+    .typing.show { display: block; }
+    .typing span { animation: blink 1.4s infinite; }
+    .typing span:nth-child(2) { animation-delay: 0.2s; }
+    .typing span:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink { 0%, 60%, 100% { opacity: 0.3; } 30% { opacity: 1; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>⚡ Arena Chat</h1>
+    <div>
+      <span class="status-dot err" id="statusDot"></span>
+      <span class="status-text" id="statusText">checking...</span>
+    </div>
+  </div>
+  <div class="controls">
+    <select id="modelSelect">
+      <option value="arena-battle">⚔️ Battle (2 models)</option>
+      <option value="claude-opus-4-6">Claude Opus</option>
+      <option value="claude-sonnet-4-6">Claude Sonnet</option>
+      <option value="gpt-5.4">GPT-5.4</option>
+      <option value="gemini-3.1-pro">Gemini Pro</option>
+      <option value="grok-4.20">Grok</option>
+    </select>
+    <button onclick="clearChat()">🗑️</button>
+    <button id="streamBtn" class="stream-btn" onclick="toggleStream()">📡 ON</button>
+  </div>
+  <div class="messages" id="messages">
+    <div class="msg system">Gõ tin nhắn để chat. Server: http://127.0.0.1:8000</div>
+  </div>
+  <div class="typing" id="typing"><span>●</span><span>●</span><span>●</span> đang gen token...</div>
+  <div class="input-area">
+    <textarea id="input" placeholder="Gõ tin nhắn..." onkeydown="onKey(event)" oninput="autoResize(this)"></textarea>
+    <button id="sendBtn" onclick="send()">Gửi</button>
+  </div>
+<script>
+const API="http://127.0.0.1:8000";let useStream=true,isSending=false,messages=[];
+async function checkStatus(){try{const r=await fetch(API+"/health");const d=await r.json();if(d.status==="ok"){document.getElementById("statusDot").className="status-dot ok";document.getElementById("statusText").textContent="Server OK";try{const br=await fetch(API+"/admin/broker");const bd=await br.json();if(bd.cached_token)document.getElementById("statusText").textContent="✓ Realtime";else if(bd.extension_connected)document.getElementById("statusText").textContent="✓ Connected";}catch(e){}}else throw 0;}catch(e){document.getElementById("statusDot").className="status-dot err";document.getElementById("statusText").textContent="Server down";}}
+setInterval(checkStatus,5000);checkStatus();
+async function send(){const i=document.getElementById("input");const t=i.value.trim();if(!t||isSending)return;isSending=true;document.getElementById("sendBtn").disabled=true;i.value="";autoResize(i);addMsg("user",t);messages.push({role:"user",content:t});document.getElementById("typing").classList.add("show");const m=document.getElementById("modelSelect").value;try{if(useStream)await sendStream(m);else await sendNormal(m);}catch(e){addMsg("error","Lỗi: "+e.message);}finally{document.getElementById("typing").classList.remove("show");isSending=false;document.getElementById("sendBtn").disabled=false;}}
+async function sendStream(model){const resp=await fetch(API+"/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages,stream:true})});if(!resp.ok){const e=await resp.text();addMsg("error",`HTTP ${resp.status}: ${e.substring(0,200)}`);return;}const reader=resp.body.getReader();const dec=new TextDecoder();let full="",isB=model==="arena-battle",el=null,cM=null,aT="",bT="";while(true){const{done,value}=await reader.read();if(done)break;const text=dec.decode(value,{stream:true});const lines=text.split("\n");for(const line of lines){if(!line.startsWith("data: "))continue;const data=line.slice(6);if(data==="[DONE]")continue;try{const ch=JSON.parse(data);const c=ch.choices?.[0];if(!c)continue;const d=c.delta;if(d?.content){let ct=d.content;if(isB){if(ct.startsWith("[A] ")){cM="A";ct=ct.slice(4);if(!el||el.dataset.model!=="A")el=addBattle("A");}else if(ct.startsWith("[B] ")){cM="B";ct=ct.slice(4);if(!el||el.dataset.model!=="B")el=addBattle("B");}el.querySelector(".content").textContent+=ct;if(cM==="A")aT+=ct;else bT+=ct;}else{if(!el)el=addMsg("assistant","");el.textContent+=ct;full+=ct;}}}catch(e){}}}if(full)messages.push({role:"assistant",content:full});else if(isB)messages.push({role:"assistant",content:`**A:**\n${aT}\n\n---\n\n**B:**\n${bT}`});}
+async function sendNormal(model){const resp=await fetch(API+"/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages})});if(!resp.ok){const e=await resp.text();addMsg("error",`HTTP ${resp.status}: ${e.substring(0,200)}`);return;}const d=await resp.json();const c=d.choices?.[0]?.message?.content||"(empty)";addMsg("assistant",c);messages.push({role:"assistant",content:c});}
+function addMsg(cls,t){const d=document.createElement("div");d.className="msg "+cls;d.textContent=t;document.getElementById("messages").appendChild(d);scrollDown();return d;}
+function addBattle(m){const d=document.createElement("div");d.className="msg assistant battle";d.dataset.model=m;d.innerHTML=`<div class="label">Model ${m}</div><div class="content"></div>`;document.getElementById("messages").appendChild(d);scrollDown();return d;}
+function clearChat(){messages=[];document.getElementById("messages").innerHTML='<div class="msg system">Đã xóa.</div>';}
+function toggleStream(){useStream=!useStream;document.getElementById("streamBtn").textContent="📡 "+(useStream?"ON":"OFF");}
+function onKey(e){if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();send();}}
+function autoResize(el){el.style.height="44px";el.style.height=Math.min(el.scrollHeight,120)+"px";}
+function scrollDown(){const m=document.getElementById("messages");m.scrollTop=m.scrollHeight;}
+</script>
+</body>
+</html>

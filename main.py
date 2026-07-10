@@ -14,10 +14,10 @@ import sys
 from contextlib import asynccontextmanager
 
 import uvicorn
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 
 from src.auth import APIKeyMiddleware
 from src.config import (
@@ -174,6 +174,14 @@ app.include_router(admin_router, tags=["Admin"])  # /health, /cookie-status, /ad
 app.include_router(chat_router, prefix="/v1", tags=["Chat"])  # /v1/chat/completions
 app.include_router(battle_router, prefix="/v1", tags=["Battle"])  # /v1/battle, /v1/battle/vote
 app.include_router(models_router, prefix="/v1", tags=["Models"])  # /v1/models
+
+
+@app.get("/web-ui")
+async def web_ui():
+    """Chat UI — mở trong Kiwi tab thứ 2."""
+    import os
+    ui_path = os.path.join(os.path.dirname(__file__), "web-ui", "chat.html")
+    return FileResponse(ui_path, media_type="text/html")
 
 
 if __name__ == "__main__":
