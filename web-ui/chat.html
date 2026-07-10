@@ -70,9 +70,63 @@
   </div>
 <script>
 const API="http://127.0.0.1:8000";let useStream=true,isSending=false,messages=[];
-async function checkStatus(){try{const r=await fetch(API+"/health");const d=await r.json();if(d.status==="ok"){document.getElementById("statusDot").className="status-dot ok";document.getElementById("statusText").textContent="Server OK";try{const br=await fetch(API+"/admin/broker");const bd=await br.json();if(bd.cached_token)document.getElementById("statusText").textContent="✓ Realtime";else if(bd.extension_connected)document.getElementById("statusText").textContent="✓ Connected";}catch(e){}}else throw 0;}catch(e){document.getElementById("statusDot").className="status-dot err";document.getElementById("statusText").textContent="Server down";}}
-setInterval(checkStatus,5000);checkStatus();
-async function send(){const i=document.getElementById("input");const t=i.value.trim();if(!t||isSending)return;isSending=true;document.getElementById("sendBtn").disabled=true;i.value="";autoResize(i);addMsg("user",t);messages.push({role:"user",content:t});document.getElementById("typing").classList.add("show");const m=document.getElementById("modelSelect").value;try{if(useStream)await sendStream(m);else await sendNormal(m);}catch(e){addMsg("error","Lỗi: "+e.message);}finally{document.getElementById("typing").classList.remove("show");isSending=false;document.getElementById("sendBtn").disabled=false;}}
+
+// ── Auto-start server qua Termux Intent ────────────────────
+// Nếu server down, Chat UI tự mở Termux → chạy arena-go → quay lại
+async function ensureServerRunning() {
+  try {
+    const r = await fetch(API + "/health", { signal: AbortSignal.timeout(3000) });
+    const d = await r.json();
+    if (d.status === "ok") return true;
+  } catch(e) {}
+
+  // Server down — mở Termux qua Intent
+  showSystem("Server down — đang mở Termux để start...");
+  window.location.href = "intent://arena-go#Intent;scheme=termux;package=com.termux;S.com.termux.app.RUN_COMMAND=arena-go;end";
+
+  // Poll cho đến khi server up (max 60s)
+  for (let i = 0; i < 60; i++) {
+    await sleep(1000);
+    try {
+      const r = await fetch(API + "/health", { signal: AbortSignal.timeout(2000) });
+      const d = await r.json();
+      if (d.status === "ok") {
+        showSystem("✓ Server started!");
+        checkStatus();
+        return true;
+      }
+    } catch(e) {}
+  }
+  showSystem("⚠ Không start được server. Mở Termux chạy: arena-go");
+  return false;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+function showSystem(text) {
+  const m = document.getElementById("messages");
+  const d = document.createElement("div");
+  d.className = "msg system";
+  d.textContent = text;
+  m.appendChild(d);
+  scrollDown();
+}
+
+// ── Status check ──────────────────────────────────────────
+async function checkStatus(){try{const r=await fetch(API+"/health");const d=await r.json();if(d.status==="ok"){document.getElementById("statusDot").className="status-dot ok";document.getElementById("statusText").textContent="Server OK";try{const br=await fetch(API+"/admin/broker");const bd=await br.json();if(bd.cached_token)document.getElementById("statusText").textContent="✓ Realtime";else if(bd.extension_connected)document.getElementById("statusText").textContent="✓ Connected";else document.getElementById("statusText").textContent="⚠ Đợi extension...";}catch(e){}}else throw 0;}catch(e){document.getElementById("statusDot").className="status-dot err";document.getElementById("statusText").textContent="Server down";}}
+setInterval(checkStatus,5000);
+
+// ── Auto-start on page load ───────────────────────────────
+(async function() {
+  checkStatus();
+  // Nếu server down, tự start
+  try {
+    const r = await fetch(API + "/health", { signal: AbortSignal.timeout(2000) });
+  } catch(e) {
+    await ensureServerRunning();
+  }
+})();
+
+async function send(){const i=document.getElementById("input");const t=i.value.trim();if(!t||isSending)return;isSending=true;document.getElementById("sendBtn").disabled=true;i.value="";autoResize(i);addMsg("user",t);messages.push({role:"user",content:t});document.getElementById("typing").classList.add("show");const m=document.getElementById("modelSelect").value;try{if(useStream)await sendStream(m);else await sendNormal(m);}catch(e){addMsg("error","Lỗi: "+e.message);if(e.message.includes("fetch")){showSystem("⚠ Server down? Đang thử restart...");ensureServerRunning();}}finally{document.getElementById("typing").classList.remove("show");isSending=false;document.getElementById("sendBtn").disabled=false;}}
 async function sendStream(model){const resp=await fetch(API+"/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages,stream:true})});if(!resp.ok){const e=await resp.text();addMsg("error",`HTTP ${resp.status}: ${e.substring(0,200)}`);return;}const reader=resp.body.getReader();const dec=new TextDecoder();let full="",isB=model==="arena-battle",el=null,cM=null,aT="",bT="";while(true){const{done,value}=await reader.read();if(done)break;const text=dec.decode(value,{stream:true});const lines=text.split("\n");for(const line of lines){if(!line.startsWith("data: "))continue;const data=line.slice(6);if(data==="[DONE]")continue;try{const ch=JSON.parse(data);const c=ch.choices?.[0];if(!c)continue;const d=c.delta;if(d?.content){let ct=d.content;if(isB){if(ct.startsWith("[A] ")){cM="A";ct=ct.slice(4);if(!el||el.dataset.model!=="A")el=addBattle("A");}else if(ct.startsWith("[B] ")){cM="B";ct=ct.slice(4);if(!el||el.dataset.model!=="B")el=addBattle("B");}el.querySelector(".content").textContent+=ct;if(cM==="A")aT+=ct;else bT+=ct;}else{if(!el)el=addMsg("assistant","");el.textContent+=ct;full+=ct;}}}catch(e){}}}if(full)messages.push({role:"assistant",content:full});else if(isB)messages.push({role:"assistant",content:`**A:**\n${aT}\n\n---\n\n**B:**\n${bT}`});}
 async function sendNormal(model){const resp=await fetch(API+"/v1/chat/completions",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({model,messages})});if(!resp.ok){const e=await resp.text();addMsg("error",`HTTP ${resp.status}: ${e.substring(0,200)}`);return;}const d=await resp.json();const c=d.choices?.[0]?.message?.content||"(empty)";addMsg("assistant",c);messages.push({role:"assistant",content:c});}
 function addMsg(cls,t){const d=document.createElement("div");d.className="msg "+cls;d.textContent=t;document.getElementById("messages").appendChild(d);scrollDown();return d;}

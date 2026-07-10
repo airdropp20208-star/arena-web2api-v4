@@ -1,12 +1,8 @@
 #!/usr/bin/env bash
-# arena-go — 1 lệnh duy nhất: setup + start + mở Kiwi
+# arena-go — Split-screen: Termux (trên) + Kiwi (dưới)
 #
-# Cài shortcut trên home screen:
-#   Long-press desktop → Widget → Termux:Widget → Termux shortcut
-#   Command: arena-go
-#
-# Hoặc chạy trong Termux:
-#   arena-go
+# 1 lệnh: start server + mở split-screen
+# Termux nửa trên (log server), Kiwi nửa dưới (arena.ai + chat)
 
 set -u
 
@@ -25,41 +21,28 @@ ARENA_DIR="${ARENA_DIR:-$HOME/arena-web2api-v4}"
 
 echo ""
 echo "═══════════════════════════════════════════════════════"
-echo "  🚀 arena-go — One Click Start"
+echo "  🚀 arena-go — Split Screen Mode"
+echo "  Termux (trên) + Kiwi Browser (dưới)"
 echo "═══════════════════════════════════════════════════════"
 echo ""
 
-# ── Bước 1: Check code tồn tại ─────────────────────────────────────────────
+# ── Check ──────────────────────────────────────────────────────────────────
 if [ ! -f "$ARENA_DIR/main.py" ]; then
-    info "Lần đầu — clone code..."
-    git clone https://github.com/airdropp20208-star/arena-web2api-v4.git "$ARENA_DIR" 2>/dev/null || {
-        err "Không clone được. Kiểm tra internet."
-        exit 1
-    }
-    cd "$ARENA_DIR"
-    bash auto-setup.sh
-    log "Setup xong. Edit .env rồi chạy lại arena-go."
-    exit 0
+    err "Code không tồn tại. Chạy: git clone + bash auto-setup.sh"
+    exit 1
 fi
 
 cd "$ARENA_DIR"
 
-# ── Bước 2: Check .env ─────────────────────────────────────────────────────
 if [ ! -f .env ] || ! grep -q "ARENA_AUTH_COOKIE=." .env; then
     warn ".env chưa có cookie. Chạy: arena setup"
     exit 1
 fi
 
-# ── Bước 3: Check deps ─────────────────────────────────────────────────────
-if ! python3 -c "import fastapi, httpx" 2>/dev/null; then
-    info "Cài deps..."
-    pip install -r requirements.txt --quiet --break-system-packages 2>/dev/null || true
-fi
-
-# ── Bước 4: Start server (nếu chưa chạy) ───────────────────────────────────
+# ── Start server (ngầm nếu chưa chạy) ──────────────────────────────────────
 if ! curl -s -m 2 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
     info "Starting server..."
-    chmod +x arena broker-only.sh keepalive.sh 2>/dev/null || true
+    chmod +x arena keepalive.sh 2>/dev/null || true
     termux-wake-lock 2>/dev/null || true
 
     LOG_DIR="$HOME/.arena/logs"
@@ -72,7 +55,6 @@ if ! curl -s -m 2 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; the
     fi
     disown 2>/dev/null || true
 
-    # Đợi server ready
     for i in $(seq 1 20); do
         if curl -s -m 2 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
             log "Server ready!"
@@ -86,25 +68,29 @@ else
     log "Server đang chạy."
 fi
 
-# ── Bước 5: Mở Kiwi Browser — 2 tab ─────────────────────────────────────────
+# ── Mở Kiwi ở split-screen ─────────────────────────────────────────────────
 if command -v am >/dev/null 2>&1; then
-    info "Mở Kiwi Browser — Tab 1: arena.ai..."
-    am start -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
+    info "Mở Kiwi Browser (split-screen)..."
+
+    # Mở arena.ai — Kiwi sẽ mở ở nửa dưới (split-screen auto)
+    am start \
+        --windowing-mode multi-window \
+        -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
         -a android.intent.action.VIEW \
         -d "https://arena.ai" 2>/dev/null || \
     am start -a android.intent.action.VIEW -d "https://arena.ai" 2>/dev/null || true
 
-    sleep 2
-    info "Mở Tab 2: Chat UI..."
-    am start -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
+    sleep 3
+
+    # Mở tab 2: Chat UI
+    am start \
+        -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
         -a android.intent.action.VIEW \
-        -d "http://127.0.0.1:8000/web-ui" 2>/dev/null || \
-    am start -a android.intent.action.VIEW -d "http://127.0.0.1:8000/web-ui" 2>/dev/null || true
+        -d "http://127.0.0.1:8000/web-ui" 2>/dev/null || true
 fi
 
-# ── Bước 6: Status ─────────────────────────────────────────────────────────
+# ── Hiển thị log real-time (Termux ở nửa trên) ─────────────────────────────
 echo ""
-sleep 3
 echo "═══════════════════════════════════════════════════════"
 echo "  📊 Status"
 echo "═══════════════════════════════════════════════════════"
@@ -115,13 +101,6 @@ else
     echo -e "  Server:     ${RED}✗ down${NC}"
 fi
 
-if pgrep -f "keepalive.sh" >/dev/null 2>&1; then
-    echo -e "  Keepalive:  ${GREEN}✓ running${NC}"
-else
-    echo -e "  Keepalive:  ${RED}✗ not running${NC}"
-fi
-
-# Extension status
 broker_json=$(curl -s -m 3 http://127.0.0.1:8000/admin/broker 2>/dev/null)
 if [ -n "$broker_json" ]; then
     ext=$(echo "$broker_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('extension_connected', False))" 2>/dev/null)
@@ -129,20 +108,24 @@ if [ -n "$broker_json" ]; then
     cached=$(echo "$broker_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('cached_token', False))" 2>/dev/null)
     if [ "$ext" = "True" ]; then
         cache_str=""
-        [ "$cached" = "True" ] && cache_str=" (cached: ✓)"
+        [ "$cached" = "True" ] && cache_str=" (cached: ✓ REALTIME)"
         echo -e "  Extension:  ${GREEN}✓ connected${NC} (tokens: $tokens$cache_str)"
     else
-        echo -e "  Extension:  ${YELLOW}⏳ waiting${NC} — mở Kiwi → click icon extension"
+        echo -e "  Extension:  ${YELLOW}⏳ waiting${NC} — Kiwi đang mở, đợi extension poll..."
     fi
 fi
 
 echo ""
 echo "═══════════════════════════════════════════════════════"
-echo "  Server chạy ngầm. Có thể tắt Termux."
-echo "  Kiwi Browser đã mở — click icon extension để verify."
 echo ""
-echo "  Test chat:"
-echo "    curl -X POST http://127.0.0.1:8000/v1/chat/completions \\"
-echo "      -H \"Content-Type: application/json\" \\"
-echo "      -d '{\"model\":\"arena-battle\",\"messages\":[{\"role\":\"user\",\"content\":\"hello\"}]}'"
+echo "  Kiwi đã mở — arena.ai (Tab 1) + Chat UI (Tab 2)"
+echo ""
+echo "  💡 TIP: Nếu chưa split-screen, vuốt lên từ đáy →"
+echo "     hold Termux → 'Split screen' → chọn Kiwi"
+echo ""
+echo "  Log server (Ctrl-C để dừng xem log, server vẫn chạy):"
 echo "═══════════════════════════════════════════════════════"
+echo ""
+
+# Tail log — Termux ở nửa trên hiển thị log
+tail -F "$HOME/.arena/logs/keepalive.log" "$HOME/.arena/logs/arena-server.log" 2>/dev/null
