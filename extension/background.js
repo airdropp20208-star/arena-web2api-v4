@@ -41,36 +41,9 @@ chrome.alarms.onAlarm.addListener((alarm) => {
     }
 });
 
-// ── Auto-reopen arena.ai tab khi user đóng ─────────────────────────────────
-chrome.tabs.onRemoved.addListener(async (tabId, removeInfo) => {
-    const tabs = await new Promise((resolve) => {
-        chrome.tabs.query({ url: "https://arena.ai/*" }, resolve);
-    });
-    if (!tabs || tabs.length === 0) {
-        console.log("[ArenaBroker] arena.ai tab closed, will reopen in 2s");
-        setTimeout(ensureArenaTab, 2000);
-    }
-});
-
-async function ensureArenaTab() {
-    const tabs = await new Promise((resolve) => {
-        chrome.tabs.query({ url: "https://arena.ai/*" }, resolve);
-    });
-    if (tabs && tabs.length > 0) {
-        return tabs[0];
-    }
-    console.log("[ArenaBroker] Opening arena.ai tab (background)...");
-    try {
-        const tab = await new Promise((resolve) => {
-            chrome.tabs.create({ url: ARENA_URL, active: false }, resolve);
-        });
-        await new Promise((r) => setTimeout(r, 5000));
-        return tab;
-    } catch (e) {
-        console.error("[ArenaBroker] Failed to open arena.ai tab:", e);
-        return null;
-    }
-}
+// ── KHÔNG auto-open arena.ai tab — user tự mở khi cần ─────────────────────
+// Tránh tạo nhiều tab mỗi lần extension reload
+// (Android kill background → reload → tạo tab mới → lặp lại)
 
 // ── Polling loop ───────────────────────────────────────────────────────────
 function startPolling() {

@@ -51,10 +51,10 @@ class HttpTokenBridge:
 
     @property
     def is_extension_connected(self) -> bool:
-        """Extension "connected" nếu đã poll trong 6s qua (3 poll cycles)."""
+        """Extension "connected" nếu đã poll trong 5s qua."""
         if self._extension_last_seen == 0.0:
             return False
-        return (time.time() - self._extension_last_seen) < 6.0
+        return (time.time() - self._extension_last_seen) < 5.0
 
     @property
     def token_count(self) -> int:
