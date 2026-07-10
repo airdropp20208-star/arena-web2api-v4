@@ -30,13 +30,15 @@ _last_request_at: float = 0.0
 
 class HttpTokenBridge:
     """
-    HTTP-based token bridge. Không cần WebSocket.
+    HTTP-based token bridge với pre-token caching.
 
-    Flow:
-      1. Server cần token → set _pending_request
-      2. Extension poll /admin/poll → nhận _pending_request
-      3. Extension gen token → POST /admin/token
-      4. Server nhận token → set _pending_response → resolve future
+    Flow pre-token (realtime):
+      1. Extension tự gen token mỗi 80s → POST /admin/token (pre=true)
+      2. Server cache token
+      3. Chat request đến → server dùng cached token ngay (0ms latency)
+      4. Nếu cache trống → fallback on-demand: server queue request, extension poll, gen, submit
+
+    Pre-token TTL: 110s (token valid ~120s)
     """
 
     def __init__(self) -> None:
@@ -48,6 +50,10 @@ class HttpTokenBridge:
         self._last_poll_at: float = 0.0
         self._extension_connected: bool = False
         self._extension_last_seen: float = 0.0
+        # Pre-token cache
+        self._cached_token: str | None = None
+        self._cached_token_at: float = 0.0
+        self._pre_token_ttl: float = 110.0  # 110s
 
     @property
     def is_extension_connected(self) -> bool:
@@ -61,13 +67,22 @@ class HttpTokenBridge:
         return self._token_count
 
     async def request_token(self, timeout: float = 30.0) -> str:
-        """Server gọi: cần token. Block cho đến khi extension trả token."""
+        """Server gọi: cần token. Dùng cached pre-token nếu có, fallback on-demand."""
+        # Fast path: dùng cached pre-token nếu còn hạn
+        async with self._lock:
+            if self._cached_token and (time.time() - self._cached_token_at) < self._pre_token_ttl:
+                token = self._cached_token
+                self._cached_token = None  # consume
+                logger.info(f"Using cached pre-token (age={time.time()-self._cached_token_at:.0f}s) — REALTIME")
+                return token
+
+        # Slow path: on-demand gen
         async with self._lock:
             request_id = uuid.uuid4().hex[:12]
             self._pending_request = {"id": request_id, "ts": int(time.time() * 1000)}
             self._pending_response = None
             self._future = asyncio.get_event_loop().create_future()
-            logger.info(f"Token request {request_id} queued, waiting for extension poll...")
+            logger.info(f"Token request {request_id} queued (no cached token), waiting for extension poll...")
 
         try:
             return await asyncio.wait_for(self._future, timeout=timeout)
@@ -93,10 +108,20 @@ class HttpTokenBridge:
                 return {"need_token": True, **self._pending_request}
             return {"need_token": False}
 
-    async def submit_token(self, request_id: str, token: str | None, ok: bool, error: str | None = None) -> dict:
+    async def submit_token(self, request_id: str, token: str | None, ok: bool, error: str | None = None, pre: bool = False) -> dict:
         """Extension gọi POST /admin/token. Submit token đã gen."""
         self._extension_last_seen = time.time()
 
+        # Pre-token: cache nó, không resolve future
+        if pre and ok and token:
+            async with self._lock:
+                self._cached_token = token
+                self._cached_token_at = time.time()
+                self._token_count += 1
+                logger.info(f"Pre-token cached (len={len(token)}) — ready for realtime use")
+                return {"ok": True}
+
+        # On-demand token: resolve pending future
         async with self._lock:
             if not self._future or self._pending_request is None:
                 return {"ok": False, "error": "No pending request"}
@@ -122,6 +147,8 @@ class HttpTokenBridge:
             "extension_connected": self.is_extension_connected,
             "token_count": self._token_count,
             "pending_request": self._pending_request is not None,
+            "cached_token": self._cached_token is not None,
+            "cached_token_age": int(time.time() - self._cached_token_at) if self._cached_token_at else -1,
             "last_poll_ago": int(time.time() - self._extension_last_seen) if self._extension_last_seen else -1,
             "transport": "http_poll",
         }

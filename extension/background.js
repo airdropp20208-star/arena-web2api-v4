@@ -15,13 +15,19 @@ const POLL_INTERVAL_MS = 2000;
 const RECAPTCHA_SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const RECAPTCHA_ACTION = "chat_submit";
 const ARENA_URL = "https://arena.ai";
+// Pre-token: extension tự gen token mỗi 80s, POST về server
+// Server cache token, dùng ngay khi chat request → realtime
+const PRETOKEN_INTERVAL_MS = 80000;
+const TOKEN_TTL_MS = 110000; // 110s (token valid ~120s)
 
 let connected = false;
 let lastError = "";
 let tokenCount = 0;
 let cookieRefreshCount = 0;
 let pollTimer = null;
+let preTokenTimer = null;
 let isGenerating = false;
+let lastPreTokenAt = 0;
 
 // ── Load config ────────────────────────────────────────────────────────────
 chrome.storage.local.get(["serverUrl"], (result) => {
@@ -29,21 +35,76 @@ chrome.storage.local.get(["serverUrl"], (result) => {
         SERVER_URL = result.serverUrl;
     }
     startPolling();
+    startPreToken();
 });
 
 // ── Alarm để giữ background alive ──────────────────────────────────────────
 chrome.alarms.create("keepalive", { periodInMinutes: 0.4 });
 chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name === "keepalive") {
-        if (!pollTimer) {
-            startPolling();
-        }
+        if (!pollTimer) startPolling();
+        if (!preTokenTimer) startPreToken();
     }
 });
 
 // ── KHÔNG auto-open arena.ai tab — user tự mở khi cần ─────────────────────
 // Tránh tạo nhiều tab mỗi lần extension reload
 // (Android kill background → reload → tạo tab mới → lặp lại)
+
+// ── Pre-token: tự gen token mỗi 80s, POST về server ───────────────────────
+// Server cache token, dùng ngay khi chat request → realtime (0ms latency)
+function startPreToken() {
+    if (preTokenTimer) return;
+    console.log("[ArenaBroker] Starting pre-token gen every", PRETOKEN_INTERVAL_MS / 1000, "s");
+    // Gen ngay lần đầu (sau 3s delay cho tab load)
+    setTimeout(genAndSubmitPreToken, 3000);
+    preTokenTimer = setInterval(genAndSubmitPreToken, PRETOKEN_INTERVAL_MS);
+}
+
+async function genAndSubmitPreToken() {
+    // Skip nếu đang gen on-demand
+    if (isGenerating) {
+        console.log("[ArenaBroker] Pre-token skipped — on-demand gen in progress");
+        return;
+    }
+    // Skip nếu token chưa expire
+    if (lastPreTokenAt && (Date.now() - lastPreTokenAt) < PRETOKEN_INTERVAL_MS) {
+        return;
+    }
+
+    console.log("[ArenaBroker] Pre-token gen started...");
+    try {
+        const token = await Promise.race([
+            generateTokenInArenaTab(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error("Pre-token timeout 15s")), 15000)),
+        ]);
+
+        if (!token || token.length < 50) {
+            throw new Error("Invalid pre-token");
+        }
+
+        // POST pre-token to server (id = "pretoken")
+        const resp = await fetch(`${SERVER_URL}/admin/token`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                id: "pretoken",
+                token: token,
+                ok: true,
+                pre: true,  // flag: this is a pre-token, cache it
+            }),
+        });
+
+        if (resp.ok) {
+            lastPreTokenAt = Date.now();
+            tokenCount++;
+            console.log("[ArenaBroker] Pre-token submitted ✓ (len=" + token.length + ")");
+        }
+    } catch (e) {
+        console.log("[ArenaBroker] Pre-token gen failed (will retry):", e.message);
+        // Không fatal — sẽ retry lần sau
+    }
+}
 
 // ── Polling loop ───────────────────────────────────────────────────────────
 function startPolling() {

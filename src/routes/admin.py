@@ -278,14 +278,16 @@ async def admin_submit_token(request: dict):
     """
     Extension submit token — KHÔNG cần auth.
     Extension gen token xong, POST về đây.
-    Body: {"id": "...", "token": "...", "ok": true}
+    Body: {"id": "...", "token": "...", "ok": true, "pre": false}
+    pre=true → pre-token, server cache để dùng realtime
     """
     from src.token_bridge import bridge
     request_id = request.get("id", "")
     token = request.get("token")
     ok = request.get("ok", False)
     error = request.get("error")
-    return await bridge.submit_token(request_id, token, ok, error)
+    pre = request.get("pre", False)
+    return await bridge.submit_token(request_id, token, ok, error, pre=pre)
 
 
 @router.post("/admin/broker/test")
