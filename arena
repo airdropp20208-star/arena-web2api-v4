@@ -52,10 +52,11 @@ show_help() {
 arena — CLI cho arena-web2api
 
 Commands:
+  go               ⭐ 1 lệnh: start server + mở Kiwi 2 tab (arena.ai + Chat UI)
   setup            Cài deps + tạo .env (interactive, không cần nano .env)
-  start            Khởi động HTTP server + keepalive (background, kết nối broker)
+  start            Khởi động HTTP server + keepalive (background)
   stop             Dừng server + keepalive
-  status           Xem trạng thái server, broker, extension, cookie pool
+  status           Xem trạng thái server, extension, cookie pool
   restart          Restart server (giữ keepalive)
   logs             Xem log real-time (Ctrl-C để thoát)
   test             Chạy test suite
@@ -497,6 +498,101 @@ asyncio.run(main())
 " 2>&1 || err "Relogin fail"
 }
 
+# ── go — 1 lệnh start tất cả + mở Kiwi ────────────────────────────────────
+cmd_go() {
+    check_dir
+    cd "$ARENA_DIR"
+
+    log "🚀 arena-go — One Click Start"
+
+    # Check .env
+    if [ ! -f .env ] || ! grep -q "ARENA_AUTH_COOKIE=." .env; then
+        err ".env chưa có cookie. Chạy: arena setup"
+        exit 1
+    fi
+
+    # Start server nếu chưa chạy
+    if ! curl -s -m 2 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
+        info "Starting server..."
+        chmod +x keepalive.sh 2>/dev/null || true
+        termux-wake-lock 2>/dev/null || true
+
+        LOG_DIR="$HOME/.arena/logs"
+        mkdir -p "$LOG_DIR" 2>/dev/null || true
+
+        if command -v setsid >/dev/null 2>&1; then
+            setsid bash keepalive.sh > "$LOG_DIR/keepalive.log" 2>&1 < /dev/null &
+        else
+            nohup bash keepalive.sh > "$LOG_DIR/keepalive.log" 2>&1 < /dev/null &
+        fi
+        disown 2>/dev/null || true
+
+        for i in $(seq 1 20); do
+            if curl -s -m 2 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
+                log "Server ready!"
+                break
+            fi
+            sleep 1
+            echo -n "."
+        done
+        echo ""
+    else
+        log "Server đang chạy."
+    fi
+
+    # Mở Kiwi — 2 tab
+    if command -v am >/dev/null 2>&1; then
+        info "Mở Kiwi — Tab 1: arena.ai..."
+        am start -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
+            -a android.intent.action.VIEW \
+            -d "https://arena.ai" 2>/dev/null || \
+        am start -a android.intent.action.VIEW -d "https://arena.ai" 2>/dev/null || true
+
+        sleep 2
+        info "Mở Tab 2: Chat UI..."
+        am start -n com.kiwibrowser.browser/com.google.android.apps.chrome.Main \
+            -a android.intent.action.VIEW \
+            -d "http://127.0.0.1:8000/web-ui" 2>/dev/null || \
+        am start -a android.intent.action.VIEW -d "http://127.0.0.1:8000/web-ui" 2>/dev/null || true
+    fi
+
+    # Status
+    echo ""
+    sleep 3
+    echo "═══════════════════════════════════════════════════════"
+    echo "  📊 Status"
+    echo "═══════════════════════════════════════════════════════"
+
+    if curl -s -m 3 http://127.0.0.1:8000/health 2>/dev/null | grep -q '"ok"'; then
+        echo -e "  Server:     ${GREEN}✓ running${NC} (http://127.0.0.1:8000)"
+    else
+        echo -e "  Server:     ${RED}✗ down${NC}"
+    fi
+
+    broker_json=$(curl -s -m 3 http://127.0.0.1:8000/admin/broker 2>/dev/null)
+    if [ -n "$broker_json" ]; then
+        ext=$(echo "$broker_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('extension_connected', False))" 2>/dev/null)
+        tokens=$(echo "$broker_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('token_count', 0))" 2>/dev/null)
+        cached=$(echo "$broker_json" | python3 -c "import json,sys; print(json.load(sys.stdin).get('cached_token', False))" 2>/dev/null)
+        if [ "$ext" = "True" ]; then
+            cache_str=""
+            [ "$cached" = "True" ] && cache_str=" (cached: ✓ REALTIME)"
+            echo -e "  Extension:  ${GREEN}✓ connected${NC} (tokens: $tokens$cache_str)"
+        else
+            echo -e "  Extension:  ${YELLOW}⏳ waiting${NC} — Kiwi đang mở, đợi extension poll..."
+        fi
+    fi
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  Kiwi đã mở — arena.ai (Tab 1) + Chat UI (Tab 2)"
+    echo "  Server chạy ngầm. Có thể tắt Termux."
+    echo ""
+    echo "  Chat: mở Tab 2 (http://127.0.0.1:8000/web-ui)"
+    echo "  Hoặc: arena status"
+    echo "═══════════════════════════════════════════════════════"
+}
+
 # ── uninstall ──────────────────────────────────────────────────────────────
 cmd_uninstall() {
     log "Remove 'arena' symlink..."
@@ -617,6 +713,7 @@ case "${1:-}" in
     token)    cmd_token ;;
     cookie)   cmd_cookie ;;
     relogin)  cmd_relogin ;;
+    go)       shift; cmd_go "$@" ;;
     uninstall) cmd_uninstall ;;
     broker)
         case "${2:-}" in
