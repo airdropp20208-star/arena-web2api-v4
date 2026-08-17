@@ -18,7 +18,7 @@ def build_browser_headers(extra: dict | None = None) -> dict:
     """
     Headers giả lập browser thật cho request tới Arena.
 
-    Quan trọng: UA và sec-ch-ua-platform phải khớp (Linux UA → Linux platform).
+    Quan trọng: UA và sec-ch-ua-platform phải khớp (Windows Desktop Chrome).
     Mismatch → Cloudflare bot detection block request với 403 empty body.
     """
     headers = {
@@ -27,9 +27,9 @@ def build_browser_headers(extra: dict | None = None) -> dict:
         "content-type": "text/plain;charset=UTF-8",
         "origin": ARENA_BASE,
         "referer": f"{ARENA_BASE}/",
-        "sec-ch-ua": '"Chromium";v="124", "Not.A/Brand";v="99"',
+        "sec-ch-ua": '"Not=A?Brand";v="99", "Google Chrome";v="151", "Chromium";v="151"',
         "sec-ch-ua-mobile": "?0",
-        "sec-ch-ua-platform": '"Linux"',  # match UA platform
+        "sec-ch-ua-platform": '"Windows"',  # match UA platform
         "sec-fetch-dest": "empty",
         "sec-fetch-mode": "cors",
         "sec-fetch-site": "same-origin",

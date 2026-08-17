@@ -10,7 +10,7 @@
  * - Đơn giản, ít code, ít bug
  */
 
-const SERVER_URL = "http://127.0.0.1:8000";
+let SERVER_URL = "http://127.0.0.1:8010";
 const POLL_INTERVAL_MS = 2000;
 const RECAPTCHA_SITE_KEY = "6LeTGMcsAAAAALuIlkVwIxaAuZA8VledA6d3Nnb0";
 const RECAPTCHA_ACTION = "chat_submit";

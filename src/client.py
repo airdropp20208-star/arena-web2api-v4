@@ -36,8 +36,10 @@ from src.config import (
     REQUEST_TIMEOUT,
     RETRY_ATTEMPTS,
     RETRYABLE_STATUS,
+    RECAPTCHA_SOLVER,
 )
 from src.conversation import TurnPlan
+from src.desktop_cdp_transport import DesktopCDPTransport
 from src.cookie_pool import get_cookie_pool
 from src.errors import (
     ArenaAuthError,
@@ -242,6 +244,23 @@ class ArenaClient:
 
         cookies = cookie_entry.as_cookies()
         body = _json_dumps_compact(payload)
+
+        # Desktop mode sends from the real Chrome page so Arena sees matching
+        # browser cookies, fetch metadata, TLS and reCAPTCHA context.
+        if RECAPTCHA_SOLVER.lower().strip() == "desktop_cdp":
+            transport = DesktopCDPTransport(ARENA_STREAM_URL, timeout=REQUEST_TIMEOUT)
+            status, response_body = await transport.post(payload)
+            if status >= 400:
+                request = httpx.Request("POST", ARENA_STREAM_URL)
+                response = httpx.Response(status, text=response_body, request=request)
+                await _raise_for_status_async(response)
+            started = False
+            for ev in transport.parse_flight(response_body):
+                started = True
+                yield ev
+            if not started:
+                raise ArenaServerError(502, "Arena browser stream returned no events.")
+            return
 
         decoder = SSEDecoder()
         started = False

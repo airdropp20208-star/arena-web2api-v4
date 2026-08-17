@@ -1,10 +1,10 @@
 """
-Model registry — Dynamic UUID sync.
+Model registry â€” Dynamic UUID sync.
 
-Tự fetch UUID thật của mỗi model từ GET /nextjs-api/models, cache có TTL,
-fallback về static map nếu Arena không trả về.
+Tá»± fetch UUID tháº­t cá»§a má»—i model tá»« GET /nextjs-api/models, cache cÃ³ TTL,
+fallback vá» static map náº¿u Arena khÃ´ng tráº£ vá».
 
-Giải quyết vấn đề #1 của Codex review: MODEL_ID_MAP dùng UUID giả.
+Giáº£i quyáº¿t váº¥n Ä‘á» #1 cá»§a Codex review: MODEL_ID_MAP dÃ¹ng UUID giáº£.
 """
 
 from __future__ import annotations
@@ -22,8 +22,8 @@ from src.utils import DEFAULT_MODELS
 
 logger = setup_logger(__name__)
 
-# Static fallback — chỉ dùng khi registry fetch thất bại hoàn toàn.
-# Không phải UUID thật (giá trị này chỉ là placeholder an toàn).
+# Static fallback â€” chá»‰ dÃ¹ng khi registry fetch tháº¥t báº¡i hoÃ n toÃ n.
+# KhÃ´ng pháº£i UUID tháº­t (giÃ¡ trá»‹ nÃ y chá»‰ lÃ  placeholder an toÃ n).
 STATIC_FALLBACK: dict[str, str] = {
     "arena-auto": "arena-max",
     "arena-battle": "battle",
@@ -32,10 +32,10 @@ STATIC_FALLBACK: dict[str, str] = {
 
 class ModelRegistry:
     """
-    Lưu name → internal id/uuid của Arena.
+    LÆ°u name â†’ internal id/uuid cá»§a Arena.
 
-    `id` Arena cho mỗi model có thể là UUID hoặc slug tuỳ response.
-    Registry cố gắng map: name (hiển thị) → id (gửi trong payload modelAId).
+    `id` Arena cho má»—i model cÃ³ thá»ƒ lÃ  UUID hoáº·c slug tuá»³ response.
+    Registry cá»‘ gáº¯ng map: name (hiá»ƒn thá»‹) â†’ id (gá»­i trong payload modelAId).
     """
 
     def __init__(self) -> None:
@@ -47,7 +47,7 @@ class ModelRegistry:
         self._refresh_task: asyncio.Task | None = None
 
     def _ingest(self, raw) -> int:
-        """Parse raw response → điền 2 map. Trả về số model nạp."""
+        """Parse raw response â†’ Ä‘iá»n 2 map. Tráº£ vá» sá»‘ model náº¡p."""
         if not raw:
             return 0
         items = raw if isinstance(raw, list) else (raw.get("models") or raw.get("data") or [])
@@ -75,16 +75,23 @@ class ModelRegistry:
         return count
 
     async def refresh(self) -> int:
-        """Fetch models từ Arena browser. Retry 3 lần với backoff — fix #20."""
+        """Fetch models tá»« Arena browser. Retry 3 láº§n vá»›i backoff â€” fix #20."""
         import json as json_mod
+        import shutil
 
         max_retries = 3
         backoff_base = 1.5
 
+        # Windows Desktop mode uses real Chrome/CDP; agent-browser is optional.
+        if shutil.which("agent-browser") is None:
+            logger.info("Model registry: agent-browser unavailable; using static fallback")
+            self._loaded_at = time.time()
+            return 0
+
         async with self._lock:
             for attempt in range(1, max_retries + 1):
                 try:
-                    # Dùng agent-browser để lấy models (browser có cookies đúng)
+                    # DÃ¹ng agent-browser Ä‘á»ƒ láº¥y models (browser cÃ³ cookies Ä‘Ãºng)
                     proc = await asyncio.create_subprocess_exec(
                         "agent-browser",
                         "eval",
@@ -112,14 +119,14 @@ class ModelRegistry:
                         models_list = json_mod.loads(stdout.decode().strip())
                         if models_list and isinstance(models_list, list):
                             count = self._ingest(models_list)
-                            logger.info(f"Model registry: nạp {count} model từ Arena browser (attempt {attempt}).")
+                            logger.info(f"Model registry: náº¡p {count} model tá»« Arena browser (attempt {attempt}).")
                             return count
 
-                    # Empty result — retry if attempts left
+                    # Empty result â€” retry if attempts left
                     if attempt < max_retries:
                         wait = backoff_base * (2 ** (attempt - 1))
                         logger.warning(
-                            f"Model registry: browser fetch thất bại (attempt {attempt}/{max_retries}), "
+                            f"Model registry: browser fetch tháº¥t báº¡i (attempt {attempt}/{max_retries}), "
                             f"retry trong {wait:.1f}s"
                         )
                         await asyncio.sleep(wait)
@@ -133,44 +140,44 @@ class ModelRegistry:
                         )
                         await asyncio.sleep(wait)
                         continue
-                    logger.warning(f"Model registry: timeout sau {max_retries} lần, giữ cache cũ")
+                    logger.warning(f"Model registry: timeout sau {max_retries} láº§n, giá»¯ cache cÅ©")
                 except Exception as e:
                     if attempt < max_retries:
                         wait = backoff_base * (2 ** (attempt - 1))
                         logger.warning(
-                            f"Model registry refresh lỗi (attempt {attempt}/{max_retries}): {e}, "
+                            f"Model registry refresh lá»—i (attempt {attempt}/{max_retries}): {e}, "
                             f"retry trong {wait:.1f}s"
                         )
                         await asyncio.sleep(wait)
                         continue
-                    logger.warning(f"Model registry refresh lỗi sau {max_retries} lần: {e}")
+                    logger.warning(f"Model registry refresh lá»—i sau {max_retries} láº§n: {e}")
 
-            # All retries failed — keep old cache or fallback to defaults
-            logger.warning("Model registry: all retries failed, giữ cache cũ hoặc fallback DEFAULT_MODELS")
+            # All retries failed â€” keep old cache or fallback to defaults
+            logger.warning("Model registry: all retries failed, giá»¯ cache cÅ© hoáº·c fallback DEFAULT_MODELS")
             return len(self._name_to_id)
 
     def _stale(self) -> bool:
         return (time.time() - self._loaded_at) > MODEL_REGISTRY_TTL
 
     async def ensure_loaded(self) -> None:
-        """Lazy load nếu chưa có hoặc đã stale."""
+        """Lazy load náº¿u chÆ°a cÃ³ hoáº·c Ä‘Ã£ stale."""
         if not self._name_to_id or self._stale():
             await self.refresh()
 
     def resolve(self, name: str) -> str:
         """
-        name → internal id. Thứ tự:
-          1. arena-battle / arena-auto → hằng số
-          2. map động từ Arena
+        name â†’ internal id. Thá»© tá»±:
+          1. arena-battle / arena-auto â†’ háº±ng sá»‘
+          2. map Ä‘á»™ng tá»« Arena
           3. static fallback
-          4. trả name nguyên (Arena có thể chấp nhận slug)
-        Không raise — client tự quyết định có cảnh báo không.
+          4. tráº£ name nguyÃªn (Arena cÃ³ thá»ƒ cháº¥p nháº­n slug)
+        KhÃ´ng raise â€” client tá»± quyáº¿t Ä‘á»‹nh cÃ³ cáº£nh bÃ¡o khÃ´ng.
         """
         if name in STATIC_FALLBACK:
             return STATIC_FALLBACK[name]
         if name in self._name_to_id:
             return self._name_to_id[name]
-        # thử fuzzy: lowercase match
+        # thá»­ fuzzy: lowercase match
         low = {k.lower(): v for k, v in self._name_to_id.items()}
         if name.lower() in low:
             return low[name.lower()]
@@ -183,7 +190,7 @@ class ModelRegistry:
         return self._id_to_name.get(internal_id, internal_id)
 
     def list_models(self) -> list[ModelInfo]:
-        """Danh sách model đã biết — ưu tiên registry, fallback DEFAULT_MODELS."""
+        """Danh sÃ¡ch model Ä‘Ã£ biáº¿t â€” Æ°u tiÃªn registry, fallback DEFAULT_MODELS."""
         ids = list(self._name_to_id.keys()) if self._name_to_id else list(DEFAULT_MODELS)
         out = [ModelInfo(id=m) for m in ids]
         existing = {m.id for m in out}
@@ -193,7 +200,7 @@ class ModelRegistry:
         return out
 
     def reveal_name(self, internal_id: str) -> str | None:
-        """Map internal model id (từ battle reveal) → tên hiển thị."""
+        """Map internal model id (tá»« battle reveal) â†’ tÃªn hiá»ƒn thá»‹."""
         return self._id_to_name.get(internal_id)
 
     async def start_refresh_loop(self) -> None:
@@ -201,7 +208,7 @@ class ModelRegistry:
             return
 
         async def loop():
-            # load ngay lúc khởi động
+            # load ngay lÃºc khá»Ÿi Ä‘á»™ng
             await self.refresh()
             while True:
                 await asyncio.sleep(MODEL_REGISTRY_TTL)
@@ -210,7 +217,7 @@ class ModelRegistry:
                 except asyncio.CancelledError:
                     break
                 except Exception as e:
-                    logger.warning(f"Registry refresh loop lỗi: {e}")
+                    logger.warning(f"Registry refresh loop lá»—i: {e}")
 
         self._refresh_task = asyncio.create_task(loop())
 

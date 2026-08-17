@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Arena Token Broker</title>
+  <style>
+    body { font-family: -apple-system, sans-serif; min-width: 340px; padding: 16px; margin: 0; background: #1a1a1a; color: #eee; }
+    h2 { margin: 0 0 12px 0; font-size: 16px; color: #4a9; }
+    .row { margin-bottom: 12px; }
+    .row label { display: block; font-size: 12px; color: #888; margin-bottom: 4px; }
+    .row input { width: 100%; padding: 6px 8px; background: #2a2a2a; color: #eee; border: 1px solid #444; border-radius: 4px; font-size: 13px; box-sizing: border-box; }
+    .row button { padding: 6px 12px; background: #4a9; color: #000; border: 0; border-radius: 4px; font-weight: bold; cursor: pointer; font-size: 13px; }
+    .row button.secondary { background: #444; color: #eee; }
+    .row button:disabled { opacity: 0.5; cursor: not-allowed; }
+    .status { padding: 8px 10px; border-radius: 4px; font-size: 12px; margin-bottom: 8px; }
+    .status.connected { background: #0a3; color: #fff; }
+    .status.disconnected { background: #a00; color: #fff; }
+    .stat { font-size: 12px; color: #888; margin-top: 4px; }
+    .stat strong { color: #eee; }
+    .hint { font-size: 11px; color: #777; margin-top: 8px; line-height: 1.4; }
+    .error { color: #f66; font-size: 11px; margin-top: 4px; word-break: break-word; }
+    .success { color: #4a9; font-size: 11px; margin-top: 4px; word-break: break-word; }
+  </style>
+</head>
+<body>
+  <h2>Arena Token Broker (HTTP)</h2>
+
+  <div id="status" class="status disconnected">checking...</div>
+
+  <div class="row">
+    <label>Server URL</label>
+    <input id="serverUrl" type="text" placeholder="http://127.0.0.1:8000">
+  </div>
+
+  <div class="row">
+    <button id="save">Save</button>
+    <button id="reconnect" class="secondary">Force Reconnect</button>
+  </div>
+  <div class="row">
+    <button id="testCookies" class="secondary">Test Cookies</button>
+  </div>
+
+  <div class="stat">Tokens generated: <strong id="tokenCount">0</strong></div>
+  <div class="stat">Server: <strong id="serverStatus">?</strong></div>
+  <div class="stat">Arena tab: <strong id="arenaTab">?</strong></div>
+  <div class="error" id="error"></div>
+
+  <div class="hint">
+    <strong>Setup:</strong><br>
+    1. Termux: <code>arena start</code><br>
+    2. Mở tab <code>arena.ai</code> trong Kiwi, login<br>
+    3. Badge "ON" = connected to server<br>
+    4. Chat sẽ tự động request token qua HTTP polling
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

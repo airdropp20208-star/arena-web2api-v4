@@ -35,7 +35,7 @@ from src.logger import setup_logger
 
 logger = setup_logger(__name__)
 
-SolverStrategy = Literal["skip", "2captcha", "browser", "extension"]
+SolverStrategy = Literal["skip", "2captcha", "browser", "extension", "desktop_cdp"]
 
 # ── Module-level cache ─────────────────────────────────────────────────────
 _cached_token: str | None = None
@@ -66,7 +66,7 @@ async def get_recaptcha_token(
         return None
 
     # Extension strategy: skip cache because tokens are single-use
-    use_cache = strat != "extension"
+    use_cache = strat not in ("extension", "desktop_cdp")
 
     async with _cache_lock:
         now = time.time()
@@ -81,6 +81,8 @@ async def get_recaptcha_token(
                 token = await _solve_via_browser()
             elif strat == "extension":
                 token = await _solve_via_extension()
+            elif strat == "desktop_cdp":
+                token = await _solve_via_desktop_cdp()
             else:
                 logger.warning(f"Unknown reCAPTCHA strategy: {strat!r}, falling back to skip")
                 return None
@@ -309,6 +311,18 @@ async def _solve_via_browser() -> str | None:
 
 
 # ── Extension (Kiwi Browser) solver — HTTP polling, không WebSocket ─────────
+async def _solve_via_desktop_cdp() -> str | None:
+    """Generate an Enterprise v3 token in the isolated Chrome Desktop tab."""
+    from src.desktop_cdp_solver import DesktopCDPSolver
+
+    try:
+        solver = DesktopCDPSolver(RECAPTCHA_SITE_KEY, RECAPTCHA_ACTION, RECAPTCHA_SOLVE_TIMEOUT)
+        return await solver.solve()
+    except Exception as exc:
+        logger.error(f"Desktop CDP token request failed: {type(exc).__name__}: {exc}")
+        return None
+
+
 async def _solve_via_extension() -> str | None:
     """
     Request token từ extension qua HTTP polling.

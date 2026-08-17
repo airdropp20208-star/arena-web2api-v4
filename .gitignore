@@ -28,3 +28,7 @@ data/
 !.env.example
 # Keep .env.arena out too (auto-extracted cookies)
 .env.arena
+
+# Windows Desktop runtime output
+runtime/
+*.log

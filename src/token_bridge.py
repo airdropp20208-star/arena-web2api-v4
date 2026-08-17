@@ -194,14 +194,17 @@ class HttpTokenBridge:
         return None
 
     def snapshot(self) -> dict:
+        import os
+        strategy = os.getenv("RECAPTCHA_SOLVER", "extension").strip().lower()
         return {
-            "extension_connected": self.is_extension_connected,
+            "strategy": strategy,
+            "extension_connected": self.is_extension_connected if strategy == "extension" else False,
             "token_count": self._token_count,
             "pending_request": self._pending_request is not None,
             "cached_token": self._cached_token is not None,
             "cached_token_age": int(time.time() - self._cached_token_at) if self._cached_token_at else -1,
             "last_poll_ago": int(time.time() - self._extension_last_seen) if self._extension_last_seen else -1,
-            "transport": "http_poll",
+            "transport": "desktop_cdp" if strategy == "desktop_cdp" else "http_poll",
         }
 
 

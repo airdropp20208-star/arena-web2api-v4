@@ -16,6 +16,8 @@ Admin / health endpoints.
 
 from __future__ import annotations
 
+import json
+
 import os
 import time
 
@@ -396,18 +398,31 @@ async def admin_health_deep(x_admin_token: str | None = Header(default=None)):
     except Exception as e:
         checks.append({"check": "stream_endpoint_exists", "ok": False, "detail": str(e)})
 
-    # Check 4: extension connected (if using extension strategy)
+    # Check 4: active reCAPTCHA transport. Desktop CDP does not use extension polling.
     try:
-        from src.token_broker import broker
+        from src.token_bridge import bridge
         from src.recaptcha_solver import current_strategy
-        if current_strategy() == "extension":
+        strategy = current_strategy()
+        if strategy == "extension":
+            broker_state = bridge.snapshot()
+            connected = bool(broker_state.get("extension_connected"))
             checks.append({
                 "check": "extension_connected",
-                "ok": broker.is_extension_connected,
-                "detail": "connected" if broker.is_extension_connected else "DISCONNECTED — open Kiwi + extension",
+                "ok": connected,
+                "detail": "connected" if connected else "DISCONNECTED — open Chrome Desktop + arena.ai",
             })
+        elif strategy == "desktop_cdp":
+            import os
+            from urllib.request import urlopen
+            port = os.getenv("DESKTOP_CDP_PORT", "9223")
+            try:
+                targets = json.loads(urlopen(f"http://127.0.0.1:{port}/json/list", timeout=4).read())
+                ready = any(t.get("type") == "page" and str(t.get("url", "")).startswith("https://arena.ai") for t in targets)
+            except Exception:
+                ready = False
+            checks.append({"check": "desktop_cdp", "ok": ready, "detail": "Chrome/CDP ready" if ready else "Chrome/CDP unavailable"})
     except Exception as e:
-        checks.append({"check": "extension_connected", "ok": False, "detail": str(e)})
+        checks.append({"check": "recaptcha_transport", "ok": False, "detail": str(e)})
 
     # Check 5: cookie pool healthy
     try:
