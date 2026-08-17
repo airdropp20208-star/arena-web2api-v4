@@ -59,7 +59,7 @@ if (-not (Test-Path $pidFile)) {
 if (Test-Http "http://127.0.0.1:$RouterPort/v1/models") { Write-Host "9Router detected on port $RouterPort." -ForegroundColor Green } else { Write-Warning "9Router was not detected on port $RouterPort; Hermes routing may be unavailable." }
 if (-not $NoChrome) {
     $chromeCandidates = @()
-    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA)) {
+    foreach ($base in @($env:ProgramFiles, ${env:ProgramFiles(x86)}, $env:LOCALAPPDATA, "C:\Program Files", "C:\Program Files (x86)")) {
         if (-not [string]::IsNullOrWhiteSpace($base)) { $chromeCandidates += (Join-Path $base "Google\Chrome\Application\chrome.exe") }
     }
     $chrome = $chromeCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
