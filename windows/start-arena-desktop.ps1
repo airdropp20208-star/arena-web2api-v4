@@ -84,7 +84,7 @@ if (-not $NoChrome) {
         $cdpReady = $false
         do {
             Start-Sleep -Seconds 2
-            try { $targets = Get-Json "http://127.0.0.1:$CdpPort/json/list"; $cdpReady = $targets -and @($targets).Count -gt 0 } catch { $cdpReady = $false }
+            try { $targets = @(Get-Json "http://127.0.0.1:$CdpPort/json/list"); $cdpReady = @($targets | Where-Object { $_.type -eq "page" -and $_.url -like "https://arena.ai*" }).Count -gt 0 } catch { $cdpReady = $false }
         } while (-not $cdpReady -and (Get-Date) -lt $deadline)
         if ($cdpReady) { Write-Host "Arena Desktop Chrome/CDP ready." -ForegroundColor Green; try { & $python (Join-Path $RepoRoot "windows\seed-arena-cookies.py") | Write-Host } catch { Write-Warning "Arena cookie seed skipped: $($_.Exception.GetType().Name)" } } else { Write-Warning "Chrome Desktop CDP did not become ready; gateway is still running." }
     } else { Write-Warning "Google Chrome was not found; gateway is running without Desktop browser transport." }
