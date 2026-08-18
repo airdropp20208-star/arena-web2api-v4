@@ -6,4 +6,4 @@ Chỉ cần chạy `start-arena-desktop.cmd`. Mặc định gateway dùng `127.0
 
 Gateway vẫn đọc cookie từ `.env` cục bộ. Launcher không in cookie, API key hoặc nội dung request. Nếu extension chưa poll trong 30 giây, gateway vẫn được giữ lại và launcher chỉ hiện chẩn đoán an toàn. Chạy `stop-arena-desktop.cmd` để dừng gateway và đúng Chrome profile riêng.
 
-Nếu Python Hermes không nằm trong PATH, đặt biến môi trường `HERMES_PYTHON` trỏ tới `hermes-agent\venv\Scripts\python.exe`.
+Launcher tự động ưu tiên Python tại thư mục anh em `hermes 1\hermes-agent\venv\Scripts\python.exe`; chỉ cần đặt biến môi trường `HERMES_PYTHON` khi dùng vị trí khác.
