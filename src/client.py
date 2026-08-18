@@ -418,15 +418,13 @@ class ArenaClient:
                 continue
 
             except ArenaRateLimitError as e:
+                # Do not hammer Arena while it is rate-limiting the session.
+                # Return the upstream 429 immediately; callers can retry later.
                 last_exc = e
-                wait = backoff_delay(attempt, retry_after=e.retry_after)
                 logger.warning(
-                    f"[{label}] attempt {attempt}/{RETRY_ATTEMPTS}: 429 rate limit, đợi {wait:.1f}s"
+                    f"[{label}] 429 rate limit; fail-fast to protect the session"
                 )
-                if attempt >= RETRY_ATTEMPTS:
-                    raise
-                await asyncio.sleep(wait)
-                continue
+                raise
 
             except ArenaServerError as e:
                 last_exc = e
