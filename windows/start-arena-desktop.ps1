@@ -32,10 +32,6 @@ $env:PYTHONIOENCODING = "utf-8"
 $env:DESKTOP_CDP_PORT = "$CdpPort"
 $python = $env:HERMES_PYTHON
 if ([string]::IsNullOrWhiteSpace($python) -or -not (Test-Path $python)) {
-    $siblingHermes = Join-Path (Split-Path $RepoRoot -Parent) 'hermes 1\hermes-agent\venv\Scripts\python.exe'
-    if (Test-Path $siblingHermes) { $python = $siblingHermes }
-}
-if ([string]::IsNullOrWhiteSpace($python) -or -not (Test-Path $python)) {
     $cmd = Get-Command python.exe -ErrorAction SilentlyContinue
     if ($cmd) { $python = $cmd.Source }
 }
